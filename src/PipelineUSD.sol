@@ -9,15 +9,23 @@ import {
     AccessManagedUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
 
+import {WhitelistAccessedUpgradeable} from "./whitelist/WhitelistAccessedUpgradeable.sol";
+
 /// @custom:oz-upgrades-unsafe-allow constructor
-contract PipelineUSD is UUPSUpgradeable, ERC20PausableUpgradeable, AccessManagedUpgradeable {
+contract PipelineUSD is
+    UUPSUpgradeable,
+    ERC20PausableUpgradeable,
+    AccessManagedUpgradeable,
+    WhitelistAccessedUpgradeable
+{
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(address authority) external initializer {
+    function initialize(address authority, address whitelist) external initializer {
         __ERC20_init("Pipeline USD", "PLUSD");
         __AccessManaged_init(authority);
+        __WhitelistAccessUpgradeable_init(whitelist);
     }
 
     function mint(address account, uint256 value) external restricted {
@@ -40,8 +48,13 @@ contract PipelineUSD is UUPSUpgradeable, ERC20PausableUpgradeable, AccessManaged
         return 6;
     }
 
-    function _update(address from, address to, uint256 value) internal virtual override {
-        // TODO: whitelists
+    function _update(address from, address to, uint256 value)
+        internal
+        virtual
+        override
+        onlyAllowed(from)
+        onlyAllowed(to)
+    {
         super._update(from, to, value);
     }
 

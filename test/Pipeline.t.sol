@@ -10,31 +10,58 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 
 import {PipelineUSD} from "../src/PipelineUSD.sol";
 import {StakedPipelineUSD} from "../src/StakedPipelineUSD.sol";
+import {WhitelistRegistry} from "../src/WhitelistRegistry.sol";
+import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
+import {WhitelistAccessUpgradeable} from "../src/whitelist/WhitelistAccessUpgradeable.sol";
 
 contract CounterTest is Test {
+    AccessManager public authority;
+    WhitelistRegistry public whitelistRegistry;
     PipelineUSD public plUsd;
     StakedPipelineUSD public sPlUsd;
-    AccessManager public authority;
+
     address public admin = makeAddr("admin");
     address public trustee = makeAddr("trustee");
     address public upgrader = makeAddr("upgrader");
     address public pauser = makeAddr("pauser");
+    address public whitelistAdmin = makeAddr("whitelistAdmin");
 
     function setUp() public {
         _setUpAuthority();
+        _setUpWhitelistRegistry();
         _setUpPlUsd();
         _setUpSPlUsd();
 
         _setUpTrustee();
         _setUpPauser();
         _setUpUpgrader();
+        _setUpWhitelistAdmin();
     }
 
     function test_setUp() public view {
         assertEq(plUsd.authority(), address(authority));
         assertEq(sPlUsd.authority(), address(authority));
+        assertEq(whitelistRegistry.authority(), address(authority));
 
         assertEq(sPlUsd.asset(), address(plUsd));
+    }
+
+    function testFuzz_transfersWhitelist(address noAccess) public {
+        vm.assume(noAccess != address(0));
+        vm.assume(!whitelistRegistry.isAllowed(noAccess));
+
+        address withAccess = makeAddr("withAccess");
+
+        vm.prank(whitelistAdmin);
+        whitelistRegistry.allowUser(withAccess, type(uint256).max);
+
+        vm.prank(noAccess);
+        vm.expectRevert(abi.encodeWithSelector(WhitelistAccessedUpgradeable.NoAccess.selector, noAccess));
+        plUsd.transfer(withAccess, 1);
+
+        vm.prank(withAccess);
+        vm.expectRevert(abi.encodeWithSelector(WhitelistAccessedUpgradeable.NoAccess.selector, noAccess));
+        plUsd.transfer(noAccess, 1);
     }
 
     function testFuzz_trusteeAccess(address caller) public {
@@ -71,15 +98,26 @@ contract CounterTest is Test {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         UUPSUpgradeable(address(sPlUsd)).upgradeToAndCall(address(sPlUsd), "");
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        UUPSUpgradeable(address(whitelistRegistry)).upgradeToAndCall(address(whitelistRegistry), "");
     }
 
     function _setUpAuthority() private {
         authority = new AccessManager(admin);
     }
 
+    function _setUpWhitelistRegistry() private {
+        WhitelistRegistry implementation = new WhitelistRegistry();
+        bytes memory data = abi.encodeWithSelector(WhitelistRegistry.initialize.selector, address(authority));
+        whitelistRegistry = WhitelistRegistry(address(new ERC1967Proxy(address(implementation), data)));
+    }
+
     function _setUpPlUsd() private {
         PipelineUSD implementation = new PipelineUSD();
-        bytes memory data = abi.encodeWithSelector(PipelineUSD.initialize.selector, address(authority));
+        bytes memory data =
+            abi.encodeWithSelector(PipelineUSD.initialize.selector, address(authority), address(whitelistRegistry));
         plUsd = PipelineUSD(address(new ERC1967Proxy(address(implementation), data)));
     }
 
@@ -133,6 +171,21 @@ contract CounterTest is Test {
         authority.setTargetFunctionRole(address(sPlUsd), selectors, roleId);
 
         vm.prank(admin);
-        authority.setTargetFunctionRole(address(authority), selectors, roleId);
+        authority.setTargetFunctionRole(address(whitelistRegistry), selectors, roleId);
+    }
+
+    function _setUpWhitelistAdmin() private {
+        uint64 roleId = uint64(bytes8(keccak256("WHITELIST_ADMIN_ROLE")));
+
+        vm.prank(admin);
+        authority.grantRole(roleId, whitelistAdmin, 0);
+
+        bytes4[] memory selectors = new bytes4[](3);
+        selectors[0] = WhitelistAccessUpgradeable.allowSystemAddress.selector;
+        selectors[1] = WhitelistAccessUpgradeable.allowUser.selector;
+        selectors[2] = WhitelistAccessUpgradeable.disallow.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(whitelistRegistry), selectors, roleId);
     }
 }
