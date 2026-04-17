@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity =0.8.34;
+pragma solidity ^0.8.34;
 
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -54,6 +54,10 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
     }
 
     function __WithdrawalQueue_init(address _fromToken, address _intoToken) internal onlyInitializing {
+        __WithdrawalQueue_init_unchained(_fromToken, _intoToken);
+    }
+
+    function __WithdrawalQueue_init_unchained(address _fromToken, address _intoToken) internal onlyInitializing {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
         $.fromToken = IERC20(_fromToken);
         $.intoToken = IERC20(_intoToken);

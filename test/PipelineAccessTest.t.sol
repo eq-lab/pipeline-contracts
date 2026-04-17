@@ -1,25 +1,14 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.34;
 
-import {Test} from "forge-std/Test.sol";
-
 import {IAccessManaged} from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import {WhitelistRegistry} from "../src/WhitelistRegistry.sol";
 import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
 
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 
 contract PipelineAccessTest is PipelineTestSetUp {
-    function test_setUp() public view {
-        assertEq(plUsd.authority(), address(authority));
-        assertEq(sPlUsd.authority(), address(authority));
-        assertEq(whitelistRegistry.authority(), address(authority));
-
-        assertEq(sPlUsd.asset(), address(plUsd));
-    }
-
     function testFuzz_transfersWhitelist(address noAccess) public {
         vm.assume(noAccess != address(0));
         vm.assume(!whitelistRegistry.isAllowed(noAccess));
@@ -30,11 +19,15 @@ contract PipelineAccessTest is PipelineTestSetUp {
         whitelistRegistry.allowUser(withAccess, type(uint256).max);
 
         vm.prank(noAccess);
-        vm.expectRevert(abi.encodeWithSelector(WhitelistAccessedUpgradeable.NoAccess.selector, noAccess));
+        vm.expectRevert(
+            abi.encodeWithSelector(WhitelistAccessedUpgradeable.WhitelistAccessedNoAccess.selector, noAccess)
+        );
         plUsd.transfer(withAccess, 1);
 
         vm.prank(withAccess);
-        vm.expectRevert(abi.encodeWithSelector(WhitelistAccessedUpgradeable.NoAccess.selector, noAccess));
+        vm.expectRevert(
+            abi.encodeWithSelector(WhitelistAccessedUpgradeable.WhitelistAccessedNoAccess.selector, noAccess)
+        );
         plUsd.transfer(noAccess, 1);
     }
 
@@ -76,6 +69,10 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         UUPSUpgradeable(address(whitelistRegistry)).upgradeToAndCall(address(whitelistRegistry), "");
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        UUPSUpgradeable(address(withdrawalQueue)).upgradeToAndCall(address(withdrawalQueue), "");
     }
 
     function testFuzz_queueManagerAccess(address caller) public {

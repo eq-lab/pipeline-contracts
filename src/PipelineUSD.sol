@@ -25,7 +25,7 @@ contract PipelineUSD is
     function initialize(address authority, address whitelist) external initializer {
         __ERC20_init("Pipeline USD", "PLUSD");
         __AccessManaged_init(authority);
-        __WhitelistAccessUpgradeable_init(whitelist);
+        __WhitelistAccess_init(whitelist);
     }
 
     function mint(address account, uint256 value) external restricted {

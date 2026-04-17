@@ -12,7 +12,7 @@ contract WhitelistRegistry is UUPSUpgradeable, WhitelistAccessUpgradeable {
     }
 
     function initialize(address authority) external initializer {
-        __WhitelistAccessUpgradeable_init(authority);
+        __WhitelistAccess_init(authority);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override restricted {}

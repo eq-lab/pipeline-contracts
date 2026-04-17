@@ -1,44 +1,48 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity =0.8.34;
+pragma solidity ^0.8.34;
 
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 import {IWhitelist} from "./IWhitelist.sol";
 
 contract WhitelistAccessedUpgradeable is Initializable {
-    error NoAccess(address);
+    error WhitelistAccessedNoAccess(address);
 
-    /// @custom:storage-location erc7201:pipeline.storage.WhitelistAccessedUpgradeable
-    struct WhitelistAccessedUpgradeableStorage {
+    /// @custom:storage-location erc7201:pipeline.storage.WhitelistAccessed
+    struct WhitelistAccessedStorage {
         IWhitelist whitelist;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("pipeline.storage.WhitelistAccessedUpgradeable")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant WhitelistAccessedUpgradeableStorageLocation =
-        0x0aa2995f16453e24c759093de880b78ca381101f9c2462dd5613aa009eb34100;
+    // keccak256(abi.encode(uint256(keccak256("pipeline.storage.WhitelistAccessed")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant WhitelistAccessedStorageLocation =
+        0x54a192f5411cd1027861db70d7b2d56a3f2cedbd801fe36906d589e37dee3b00;
 
-    function _getWhitelistAccessedUpgradeableStorage()
-        private
-        pure
-        returns (WhitelistAccessedUpgradeableStorage storage $)
-    {
+    function _getWhitelistAccessedStorage() private pure returns (WhitelistAccessedStorage storage $) {
         assembly {
-            $.slot := WhitelistAccessedUpgradeableStorageLocation
+            $.slot := WhitelistAccessedStorageLocation
         }
     }
 
-    function __WhitelistAccessUpgradeable_init(address whitelist) internal onlyInitializing {
-        WhitelistAccessedUpgradeableStorage storage $ = _getWhitelistAccessedUpgradeableStorage();
+    function __WhitelistAccess_init(address whitelist) internal onlyInitializing {
+        __WhitelistAccess_init_unchained(whitelist);
+    }
+
+    function __WhitelistAccess_init_unchained(address whitelist) internal onlyInitializing {
+        WhitelistAccessedStorage storage $ = _getWhitelistAccessedStorage();
         $.whitelist = IWhitelist(whitelist);
     }
 
     modifier onlyAllowed(address who) {
-        if (!_isAllowed(who)) revert NoAccess(who);
+        _onlyAllowed(who);
         _;
     }
 
-    function _isAllowed(address who) internal returns (bool) {
-        WhitelistAccessedUpgradeableStorage storage $ = _getWhitelistAccessedUpgradeableStorage();
+    function _onlyAllowed(address who) private view {
+        if (!_isAllowed(who)) revert WhitelistAccessedNoAccess(who);
+    }
+
+    function _isAllowed(address who) internal view returns (bool) {
+        WhitelistAccessedStorage storage $ = _getWhitelistAccessedStorage();
         return $.whitelist.isAllowed(who);
     }
 }
