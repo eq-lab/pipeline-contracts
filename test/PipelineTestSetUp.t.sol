@@ -39,11 +39,12 @@ contract PipelineTestSetUp is Test {
 
         _setUpTrustee();
         _setUpPauser();
-        _setUpUpgrader();
         _setUpWhitelistAdmin();
 
         _setupWithdrawalQueue();
         _setUpQueueManager();
+
+        _setUpUpgrader();
     }
 
     function _setUpAuthority() private {
@@ -125,6 +126,9 @@ contract PipelineTestSetUp is Test {
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(whitelistRegistry), selectors, roleId);
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(withdrawalQueue), selectors, roleId);
     }
 
     function _setUpWhitelistAdmin() private {

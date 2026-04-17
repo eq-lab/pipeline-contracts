@@ -7,7 +7,7 @@ import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 
 contract WhitelistRegistryTest is PipelineTestSetUp {
     function testFuzz_allowSystemAddress(address systemAddress) public {
-        vm.assume(systemAddress != address(0));
+        vm.assume(!whitelistRegistry.isAllowed(systemAddress));
 
         vm.prank(whitelistAdmin);
         whitelistRegistry.allowSystemAddress(systemAddress);
@@ -21,7 +21,7 @@ contract WhitelistRegistryTest is PipelineTestSetUp {
     }
 
     function testFuzz_allowUser(address user, uint256 until) public {
-        vm.assume(user != address(0));
+        vm.assume(user != address(0) && !whitelistRegistry.isAllowed(user));
         vm.assume(until != type(uint256).max && until > block.timestamp);
 
         vm.prank(whitelistAdmin);
@@ -71,7 +71,7 @@ contract WhitelistRegistryTest is PipelineTestSetUp {
     }
 
     function testFuzz_reverts(address user) public {
-        vm.assume(user != address(0));
+        vm.assume(user != address(0) && !whitelistRegistry.isAllowed(user));
 
         vm.prank(whitelistAdmin);
         vm.expectRevert(abi.encodeWithSelector(WhitelistAccessUpgradeable.WhitelistAccessZeroAddress.selector));
