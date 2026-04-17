@@ -30,6 +30,7 @@ contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
     error WhitelistAccessZeroAddress();
     error WhitelistAccessAlreadyAllowed();
     error WhitelistAccessNoAllowance();
+    error WhitelistAccessAllowanceInPast();
 
     function __WhitelistAccess_init(address authority) internal onlyInitializing {
         __AccessManaged_init(authority);
@@ -39,10 +40,7 @@ contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
     function __WhitelistAccess_init_unchained() internal onlyInitializing {}
 
     function allowSystemAddress(address systemAddress) external restricted {
-        if (systemAddress == address(0)) revert WhitelistAccessZeroAddress();
-
-        WhitelistAccessStorage storage $ = _getWhitelistAccessStorage();
-        $.allowedUntil[systemAddress] = type(uint256).max;
+        _setAllowance(systemAddress, type(uint256).max);
 
         emit SystemAddressAllowed(systemAddress);
     }
@@ -50,11 +48,8 @@ contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
     function allowUser(address user, uint256 until) external restricted {
         if (user == address(0)) revert WhitelistAccessZeroAddress();
 
-        WhitelistAccessStorage storage $ = _getWhitelistAccessStorage();
-        uint256 current = $.allowedUntil[user];
-        if (current >= until) revert WhitelistAccessAlreadyAllowed();
+        _setAllowance(user, until);
 
-        $.allowedUntil[user] = until;
         emit UserAllowed(user, until);
     }
 
@@ -73,6 +68,17 @@ contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
 
     function allowedUntil(address who) external view returns (uint256) {
         return _allowedUntil(who);
+    }
+
+    function _setAllowance(address who, uint256 until) private {
+        WhitelistAccessStorage storage $ = _getWhitelistAccessStorage();
+
+        if (until < block.timestamp) revert WhitelistAccessAllowanceInPast();
+
+        uint256 current = $.allowedUntil[who];
+        if (current >= until) revert WhitelistAccessAlreadyAllowed();
+
+        $.allowedUntil[who] = until;
     }
 
     function _isAllowed(address who) internal view returns (bool) {
