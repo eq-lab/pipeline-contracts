@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.34;
 
-import {Test} from "forge-std/Test.sol";
-
 import {IAccessManaged} from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import {WhitelistRegistry} from "../src/WhitelistRegistry.sol";
 import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
 
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
@@ -30,11 +27,15 @@ contract PipelineAccessTest is PipelineTestSetUp {
         whitelistRegistry.allowUser(withAccess, type(uint256).max);
 
         vm.prank(noAccess);
-        vm.expectRevert(abi.encodeWithSelector(WhitelistAccessedUpgradeable.NoAccess.selector, noAccess));
+        vm.expectRevert(
+            abi.encodeWithSelector(WhitelistAccessedUpgradeable.WhitelistAccessedNoAccess.selector, noAccess)
+        );
         plUsd.transfer(withAccess, 1);
 
         vm.prank(withAccess);
-        vm.expectRevert(abi.encodeWithSelector(WhitelistAccessedUpgradeable.NoAccess.selector, noAccess));
+        vm.expectRevert(
+            abi.encodeWithSelector(WhitelistAccessedUpgradeable.WhitelistAccessedNoAccess.selector, noAccess)
+        );
         plUsd.transfer(noAccess, 1);
     }
 

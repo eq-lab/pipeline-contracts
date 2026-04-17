@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity =0.8.34;
+pragma solidity ^0.8.34;
 
 import {
     AccessManagedUpgradeable
@@ -8,22 +8,18 @@ import {
 import {IWhitelist} from "./IWhitelist.sol";
 
 contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
-    /// @custom:storage-location erc7201:pipeline.storage.WhitelistAccessUpgradeable
-    struct WhitelistAccessUpgradeableStorage {
+    /// @custom:storage-location erc7201:pipeline.storage.WhitelistAccess
+    struct WhitelistAccessStorage {
         mapping(address user => uint256) allowedUntil;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("pipeline.storage.WhitelistAccessUpgradeable")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant WhitelistAccessUpgradeableStorageLocation =
-        0x527bb328bffe78eea48daf21be84fa4cfdefd33b4b7b139e779d572910f8c500;
+    // keccak256(abi.encode(uint256(keccak256("pipeline.storage.WhitelistAccess")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant WhitelistAccessStorageLocation =
+        0x182bd4f5522b4dbbdfc5c8885008e977922ca853b80736b1dc36a62345b0ae00;
 
-    function _getWhitelistAccessUpgradeableStorage()
-        private
-        pure
-        returns (WhitelistAccessUpgradeableStorage storage $)
-    {
+    function _getWhitelistAccessStorage() private pure returns (WhitelistAccessStorage storage $) {
         assembly {
-            $.slot := WhitelistAccessUpgradeableStorageLocation
+            $.slot := WhitelistAccessStorageLocation
         }
     }
 
@@ -31,38 +27,41 @@ contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
     event UserAllowed(address indexed user, uint256 until);
     event Disallowed(address indexed who);
 
-    error ZeroAddress();
-    error AlreadyAllowed();
-    error NoAllowance();
+    error WhitelistAccessZeroAddress();
+    error WhitelistAccessAlreadyAllowed();
+    error WhitelistAccessNoAllowance();
 
-    function __WhitelistAccessUpgradeable_init(address authority) internal onlyInitializing {
+    function __WhitelistAccess_init(address authority) internal onlyInitializing {
         __AccessManaged_init(authority);
+        __WhitelistAccess_init_unchained();
     }
 
-    function allowSystemAddress(address systemAddress) external restricted {
-        if (systemAddress == address(0)) revert ZeroAddress();
+    function __WhitelistAccess_init_unchained() internal onlyInitializing {}
 
-        WhitelistAccessUpgradeableStorage storage $ = _getWhitelistAccessUpgradeableStorage();
+    function allowSystemAddress(address systemAddress) external restricted {
+        if (systemAddress == address(0)) revert WhitelistAccessZeroAddress();
+
+        WhitelistAccessStorage storage $ = _getWhitelistAccessStorage();
         $.allowedUntil[systemAddress] = type(uint256).max;
 
         emit SystemAddressAllowed(systemAddress);
     }
 
     function allowUser(address user, uint256 until) external restricted {
-        if (user == address(0)) revert ZeroAddress();
+        if (user == address(0)) revert WhitelistAccessZeroAddress();
 
-        WhitelistAccessUpgradeableStorage storage $ = _getWhitelistAccessUpgradeableStorage();
+        WhitelistAccessStorage storage $ = _getWhitelistAccessStorage();
         uint256 current = $.allowedUntil[user];
-        if (current >= until) revert AlreadyAllowed();
+        if (current >= until) revert WhitelistAccessAlreadyAllowed();
 
         $.allowedUntil[user] = until;
         emit UserAllowed(user, until);
     }
 
     function disallow(address who) external restricted {
-        if (!_isAllowed(who)) revert NoAllowance();
+        if (!_isAllowed(who)) revert WhitelistAccessNoAllowance();
 
-        WhitelistAccessUpgradeableStorage storage $ = _getWhitelistAccessUpgradeableStorage();
+        WhitelistAccessStorage storage $ = _getWhitelistAccessStorage();
         delete $.allowedUntil[who];
 
         emit Disallowed(who);
@@ -81,7 +80,7 @@ contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
     }
 
     function _allowedUntil(address who) internal view returns (uint256) {
-        WhitelistAccessUpgradeableStorage storage $ = _getWhitelistAccessUpgradeableStorage();
+        WhitelistAccessStorage storage $ = _getWhitelistAccessStorage();
         return $.allowedUntil[who];
     }
 }
