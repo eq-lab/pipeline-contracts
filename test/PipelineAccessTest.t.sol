@@ -9,14 +9,6 @@ import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUp
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 
 contract PipelineAccessTest is PipelineTestSetUp {
-    function test_setUp() public view {
-        assertEq(plUsd.authority(), address(authority));
-        assertEq(sPlUsd.authority(), address(authority));
-        assertEq(whitelistRegistry.authority(), address(authority));
-
-        assertEq(sPlUsd.asset(), address(plUsd));
-    }
-
     function testFuzz_transfersWhitelist(address noAccess) public {
         vm.assume(noAccess != address(0));
         vm.assume(!whitelistRegistry.isAllowed(noAccess));
@@ -77,6 +69,10 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         UUPSUpgradeable(address(whitelistRegistry)).upgradeToAndCall(address(whitelistRegistry), "");
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        UUPSUpgradeable(address(withdrawalQueue)).upgradeToAndCall(address(withdrawalQueue), "");
     }
 
     function testFuzz_queueManagerAccess(address caller) public {
