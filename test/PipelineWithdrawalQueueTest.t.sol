@@ -23,6 +23,12 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         whitelistRegistry.allowUser(user, type(uint256).max);
     }
 
+    function test_setUp() public view {
+        assertEq(address(withdrawalQueue.fromToken()), address(plUsd));
+        assertEq(address(withdrawalQueue.intoToken()), address(usdc));
+        assertEq(withdrawalQueue.authority(), address(authority));
+    }
+
     function testFuzz_requestWithdrawal(uint256 withdrawalAmount) public {
         uint256 userBalanceBefore = plUsd.balanceOf(user);
         vm.assume(withdrawalAmount <= userBalanceBefore && withdrawalAmount != 0);
@@ -117,5 +123,45 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
 
         WithdrawalQueueUpgradeable.WithdrawalRequest memory request = withdrawalQueue.withdrawalRequests(requestId);
         assert(request.claimed);
+    }
+
+    function test_reverts() public {
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueZeroAmount.selector));
+        withdrawalQueue.requestWithdrawal(0);
+
+        vm.prank(queueManager);
+        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueZeroAmount.selector));
+        withdrawalQueue.increaseClaimable(0);
+
+        uint256 amount = 1_000;
+
+        vm.prank(user);
+        plUsd.approve(address(withdrawalQueue), amount);
+
+        vm.prank(user);
+        (uint256 requestId,) = withdrawalQueue.requestWithdrawal(amount);
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueTooEarly.selector));
+        withdrawalQueue.claimWithdrawal(requestId);
+
+        vm.prank(queueManager);
+        usdc.approve(address(withdrawalQueue), amount);
+
+        vm.prank(queueManager);
+        withdrawalQueue.increaseClaimable(amount);
+
+        address wrongClaimant = makeAddr("wrongClaimant");
+        vm.prank(wrongClaimant);
+        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueWrongClaimant.selector));
+        withdrawalQueue.claimWithdrawal(requestId);
+
+        vm.prank(user);
+        withdrawalQueue.claimWithdrawal(requestId);
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueAlreadyClaimed.selector));
+        withdrawalQueue.claimWithdrawal(requestId);
     }
 }

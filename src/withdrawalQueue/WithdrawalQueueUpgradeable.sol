@@ -30,6 +30,11 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
     event WithdrawalClaimed(address indexed withdrawer, uint256 indexed requestId, uint256 amount);
     event ClaimableIncreased(uint256 delta, uint256 newClaimable);
 
+    error WithdrawalQueueZeroAmount();
+    error WithdrawalQueueAlreadyClaimed();
+    error WithdrawalQueueTooEarly();
+    error WithdrawalQueueWrongClaimant();
+
     /// @custom:storage-location erc7201:pipeline.storage.WithdrawalQueue
     struct WithdrawalQueueStorage {
         WithdrawalQueueMetadata queueMetadata;
@@ -55,7 +60,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
     }
 
     function requestWithdrawal(uint256 amount) external virtual returns (uint256 requestId, uint256 queued) {
-        if (amount == 0) revert();
+        if (amount == 0) revert WithdrawalQueueZeroAmount();
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
         WithdrawalQueueMetadata storage metadata = $.queueMetadata;
 
@@ -103,9 +108,9 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
         WithdrawalRequest storage request = $.withdrawalRequests[requestId];
 
-        if (request.withdrawer != msg.sender) revert();
-        if (request.claimed) revert();
-        if (request.queued < $.queueMetadata.claimable) revert();
+        if (request.withdrawer != msg.sender) revert WithdrawalQueueWrongClaimant();
+        if (request.claimed) revert WithdrawalQueueAlreadyClaimed();
+        if (request.queued > $.queueMetadata.claimable) revert WithdrawalQueueTooEarly();
 
         // TODO: what is an actual amount?
         amount = request.amount;
@@ -119,6 +124,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
     }
 
     function _increaseClaimable(uint256 amount) internal virtual returns (uint256 claimable) {
+        if (amount == 0) revert WithdrawalQueueZeroAmount();
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
 
         claimable = $.queueMetadata.claimable + amount;
