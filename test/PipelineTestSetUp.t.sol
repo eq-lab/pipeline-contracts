@@ -4,29 +4,34 @@ pragma solidity ^0.8.34;
 import {Test} from "forge-std/Test.sol";
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {IAccessManaged} from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import {AccessManager} from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import {PipelineUSD} from "../src/PipelineUSD.sol";
 import {StakedPipelineUSD} from "../src/StakedPipelineUSD.sol";
 import {WhitelistRegistry} from "../src/WhitelistRegistry.sol";
-import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
+import {PipelineWithdrawalQueue} from "../src/PipelineWithdrawalQueue.sol";
 import {WhitelistAccessUpgradeable} from "../src/whitelist/WhitelistAccessUpgradeable.sol";
+import {WithdrawalQueueUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueUpgradeable.sol";
 
-contract CounterTest is Test {
+import {USDCMock} from "./mocks/USDCMock.t.sol";
+
+contract PipelineTestSetUp is Test {
     AccessManager public authority;
     WhitelistRegistry public whitelistRegistry;
     PipelineUSD public plUsd;
     StakedPipelineUSD public sPlUsd;
+    PipelineWithdrawalQueue public withdrawalQueue;
+    USDCMock public usdc = new USDCMock();
 
     address public admin = makeAddr("admin");
     address public trustee = makeAddr("trustee");
     address public upgrader = makeAddr("upgrader");
     address public pauser = makeAddr("pauser");
     address public whitelistAdmin = makeAddr("whitelistAdmin");
+    address public queueManager = makeAddr("queueManager");
 
-    function setUp() public {
+    function setUp() public virtual {
         _setUpAuthority();
         _setUpWhitelistRegistry();
         _setUpPlUsd();
@@ -36,72 +41,9 @@ contract CounterTest is Test {
         _setUpPauser();
         _setUpUpgrader();
         _setUpWhitelistAdmin();
-    }
 
-    function test_setUp() public view {
-        assertEq(plUsd.authority(), address(authority));
-        assertEq(sPlUsd.authority(), address(authority));
-        assertEq(whitelistRegistry.authority(), address(authority));
-
-        assertEq(sPlUsd.asset(), address(plUsd));
-    }
-
-    function testFuzz_transfersWhitelist(address noAccess) public {
-        vm.assume(noAccess != address(0));
-        vm.assume(!whitelistRegistry.isAllowed(noAccess));
-
-        address withAccess = makeAddr("withAccess");
-
-        vm.prank(whitelistAdmin);
-        whitelistRegistry.allowUser(withAccess, type(uint256).max);
-
-        vm.prank(noAccess);
-        vm.expectRevert(abi.encodeWithSelector(WhitelistAccessedUpgradeable.NoAccess.selector, noAccess));
-        plUsd.transfer(withAccess, 1);
-
-        vm.prank(withAccess);
-        vm.expectRevert(abi.encodeWithSelector(WhitelistAccessedUpgradeable.NoAccess.selector, noAccess));
-        plUsd.transfer(noAccess, 1);
-    }
-
-    function testFuzz_trusteeAccess(address caller) public {
-        vm.assume(caller != trustee);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        plUsd.mint(caller, 1);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        plUsd.burn(caller, 1);
-    }
-
-    function testFuzz_pauserAccess(address caller) public {
-        vm.assume(caller != pauser);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        plUsd.pause();
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        plUsd.unpause();
-    }
-
-    function testFuzz_upgraderAccess(address caller) public {
-        vm.assume(caller != upgrader);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        UUPSUpgradeable(address(plUsd)).upgradeToAndCall(address(plUsd), "");
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        UUPSUpgradeable(address(sPlUsd)).upgradeToAndCall(address(sPlUsd), "");
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        UUPSUpgradeable(address(whitelistRegistry)).upgradeToAndCall(address(whitelistRegistry), "");
+        _setupWithdrawalQueue();
+        _setUpQueueManager();
     }
 
     function _setUpAuthority() private {
@@ -125,6 +67,17 @@ contract CounterTest is Test {
         StakedPipelineUSD implementation = new StakedPipelineUSD();
         bytes memory data = abi.encodeWithSelector(StakedPipelineUSD.initialize.selector, plUsd, address(authority));
         sPlUsd = StakedPipelineUSD(address(new ERC1967Proxy(address(implementation), data)));
+    }
+
+    function _setupWithdrawalQueue() private {
+        PipelineWithdrawalQueue implementation = new PipelineWithdrawalQueue();
+        bytes memory data = abi.encodeWithSelector(
+            PipelineWithdrawalQueue.initialize.selector, address(authority), address(plUsd), address(usdc)
+        );
+        withdrawalQueue = PipelineWithdrawalQueue(address(new ERC1967Proxy(address(implementation), data)));
+
+        vm.prank(whitelistAdmin);
+        whitelistRegistry.allowSystemAddress(address(withdrawalQueue));
     }
 
     function _setUpTrustee() private {
@@ -187,5 +140,18 @@ contract CounterTest is Test {
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(whitelistRegistry), selectors, roleId);
+    }
+
+    function _setUpQueueManager() private {
+        uint64 roleId = uint64(bytes8(keccak256("WITHDRAWAL_QUEUE_MANAGER_ROLE")));
+
+        vm.prank(admin);
+        authority.grantRole(roleId, queueManager, 0);
+
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = WithdrawalQueueUpgradeable.increaseClaimable.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(withdrawalQueue), selectors, roleId);
     }
 }
