@@ -26,19 +26,8 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         uint256 queued;
     }
 
-    event WithdrawalRequested(
-        address indexed withdrawer,
-        uint256 indexed requestId,
-        uint256 amount,
-        uint256 queued
-    );
-
-    event WithdrawalClaimed(
-        address indexed withdrawer,
-        uint256 indexed requestId,
-        uint256 amount
-    );
-
+    event WithdrawalRequested(address indexed withdrawer, uint256 indexed requestId, uint256 amount, uint256 queued);
+    event WithdrawalClaimed(address indexed withdrawer, uint256 indexed requestId, uint256 amount);
     event ClaimableIncreased(uint256 delta, uint256 newClaimable);
 
     /// @custom:storage-location erc7201:pipeline.storage.WithdrawalQueue
@@ -50,7 +39,8 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
     }
 
     // keccak256(abi.encode(uint256(keccak256("pipeline.storage.WithdrawalQueue")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant WithdrawalQueueStorageLocation = 0x4cac70af0cf2a7940d95a04f5e319da114dcc73860d034caf69b06ca0a374600;
+    bytes32 private constant WithdrawalQueueStorageLocation =
+        0x4cac70af0cf2a7940d95a04f5e319da114dcc73860d034caf69b06ca0a374600;
 
     function _getWithdrawalQueueStorage() private pure returns (WithdrawalQueueStorage storage $) {
         assembly {
@@ -73,11 +63,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         requestId = metadata.nextWithdrawalIndex;
 
         $.withdrawalRequests[requestId] = WithdrawalRequest({
-            withdrawer: msg.sender,
-            claimed: false,
-            timestamp: uint88(block.timestamp),
-            amount: amount,
-            queued: queued
+            withdrawer: msg.sender, claimed: false, timestamp: uint88(block.timestamp), amount: amount, queued: queued
         });
 
         metadata.queued = queued;
@@ -118,7 +104,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         WithdrawalRequest storage request = $.withdrawalRequests[requestId];
 
         if (request.withdrawer != msg.sender) revert();
-        if (request.claimed) revert ();
+        if (request.claimed) revert();
         if (request.queued < $.queueMetadata.claimable) revert();
 
         // TODO: what is an actual amount?
@@ -127,7 +113,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         request.claimed = true;
         $.queueMetadata.claimed += amount;
 
-        $.fromToken.safeTransfer(msg.sender, amount);
+        $.intoToken.safeTransfer(msg.sender, amount);
 
         emit WithdrawalClaimed(msg.sender, requestId, amount);
     }

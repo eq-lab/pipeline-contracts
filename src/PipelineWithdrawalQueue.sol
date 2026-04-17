@@ -9,31 +9,19 @@ import {
 import {WithdrawalQueueUpgradeable} from "./withdrawalQueue/WithdrawalQueueUpgradeable.sol";
 
 /// @custom:oz-upgrades-unsafe-allow constructor
-contract PipelineWithdrawalQueue is
-    UUPSUpgradeable,
-    AccessManagedUpgradeable,
-    WithdrawalQueueUpgradeable
-{
+contract PipelineWithdrawalQueue is UUPSUpgradeable, AccessManagedUpgradeable, WithdrawalQueueUpgradeable {
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(
-        address authority,
-        address fromToken,
-        address intoToken
-    ) external initializer {
+    function initialize(address authority, address fromToken, address intoToken) external initializer {
         __AccessManaged_init(authority);
         __WithdrawalQueue_init(fromToken, intoToken);
     }
 
-    function increaseClaimable(
-        uint256 amount
-    ) external virtual override restricted returns (uint256 claimable) {
+    function increaseClaimable(uint256 amount) external virtual override restricted returns (uint256 claimable) {
         return super._increaseClaimable(amount);
     }
 
-    function _authorizeUpgrade(
-        address newImplementation
-    ) internal override restricted {}
+    function _authorizeUpgrade(address newImplementation) internal override restricted {}
 }

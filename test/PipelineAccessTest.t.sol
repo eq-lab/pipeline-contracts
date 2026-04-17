@@ -77,4 +77,12 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         UUPSUpgradeable(address(whitelistRegistry)).upgradeToAndCall(address(whitelistRegistry), "");
     }
+
+    function testFuzz_queueManagerAccess(address caller) public {
+        vm.assume(caller != queueManager);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        withdrawalQueue.increaseClaimable(1_000_000);
+    }
 }
