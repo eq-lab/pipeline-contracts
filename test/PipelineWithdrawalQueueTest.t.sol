@@ -105,6 +105,9 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         uint256 queueBalanceBefore = usdc.balanceOf(address(withdrawalQueue));
         WithdrawalQueueUpgradeable.WithdrawalQueueMetadata memory metadataBefore = withdrawalQueue.queueMetadata();
 
+        uint256 plUserBalanceBefore = plUsd.balanceOf(user);
+        uint256 plQueueBalanceBefore = plUsd.balanceOf(address(withdrawalQueue));
+
         vm.prank(user);
         uint256 claimedAmount = withdrawalQueue.claimWithdrawal(requestId);
 
@@ -112,6 +115,9 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
 
         assertEq(usdc.balanceOf(user), userBalanceBefore + withdrawalAmount);
         assertEq(usdc.balanceOf(address(withdrawalQueue)), queueBalanceBefore - withdrawalAmount);
+
+        assertEq(plUsd.balanceOf(user), plUserBalanceBefore);
+        assertEq(plUsd.balanceOf(address(withdrawalQueue)), plQueueBalanceBefore - withdrawalAmount);
 
         WithdrawalQueueUpgradeable.WithdrawalQueueMetadata memory metadata = withdrawalQueue.queueMetadata();
         assertEq(metadata.nextWithdrawalIndex, metadataBefore.nextWithdrawalIndex);
