@@ -4,8 +4,11 @@ pragma solidity ^0.8.34;
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import {IERC20Burnable} from "../interfaces/IERC20Burnable.sol";
+
 abstract contract WithdrawalQueueUpgradeable is Initializable {
     using SafeERC20 for IERC20;
+    using SafeERC20 for IERC20Burnable;
 
     struct WithdrawalQueueMetadata {
         // cumulative total of all withdrawal requests included the ones that have already been claimed
@@ -38,7 +41,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
     /// @custom:storage-location erc7201:pipeline.storage.WithdrawalQueue
     struct WithdrawalQueueStorage {
         WithdrawalQueueMetadata queueMetadata;
-        IERC20 fromToken;
+        IERC20Burnable fromToken;
         IERC20 intoToken;
         mapping(uint256 requestId => WithdrawalRequest) withdrawalRequests;
     }
@@ -59,7 +62,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
 
     function __WithdrawalQueue_init_unchained(address _fromToken, address _intoToken) internal onlyInitializing {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
-        $.fromToken = IERC20(_fromToken);
+        $.fromToken = IERC20Burnable(_fromToken);
         $.intoToken = IERC20(_intoToken);
     }
 
@@ -80,7 +83,6 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
             ++metadata.nextWithdrawalIndex;
         }
 
-        // TODO: what actually happens?
         $.fromToken.safeTransferFrom(msg.sender, address(this), amount);
 
         emit WithdrawalRequested(msg.sender, requestId, amount, queued);
@@ -90,7 +92,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         return _claimWithdrawal(requestId);
     }
 
-    function increaseClaimable(uint256 amount) external virtual returns (uint256 claimable);
+    function fundWithdrawals(uint256 amount, address source) external virtual returns (uint256 claimable);
 
     function withdrawalRequests(uint256 requestId) external view returns (WithdrawalRequest memory) {
         return _getWithdrawalQueueStorage().withdrawalRequests[requestId];
@@ -116,26 +118,24 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         if (request.claimed) revert WithdrawalQueueAlreadyClaimed();
         if (request.queued > $.queueMetadata.claimable) revert WithdrawalQueueTooEarly();
 
-        // TODO: what is an actual amount?
         amount = request.amount;
-
         request.claimed = true;
         $.queueMetadata.claimed += amount;
 
         $.intoToken.safeTransfer(msg.sender, amount);
+        $.fromToken.burn(amount);
 
         emit WithdrawalClaimed(msg.sender, requestId, amount);
     }
 
-    function _increaseClaimable(uint256 amount) internal virtual returns (uint256 claimable) {
+    function _fundWithdrawals(uint256 amount, address source) internal virtual returns (uint256 claimable) {
         if (amount == 0) revert WithdrawalQueueZeroAmount();
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
 
         claimable = $.queueMetadata.claimable + amount;
         $.queueMetadata.claimable = claimable;
 
-        // TODO: token source?
-        $.intoToken.safeTransferFrom(msg.sender, address(this), amount);
+        $.intoToken.safeTransferFrom(source, address(this), amount);
 
         emit ClaimableIncreased(amount, claimable);
     }

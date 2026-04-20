@@ -19,8 +19,14 @@ contract PipelineWithdrawalQueue is UUPSUpgradeable, AccessManagedUpgradeable, W
         __WithdrawalQueue_init(fromToken, intoToken);
     }
 
-    function increaseClaimable(uint256 amount) external virtual override restricted returns (uint256 claimable) {
-        return super._increaseClaimable(amount);
+    function fundWithdrawals(uint256 amount, address source)
+        external
+        virtual
+        override
+        restricted
+        returns (uint256 claimable)
+    {
+        return super._fundWithdrawals(amount, source);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override restricted {}

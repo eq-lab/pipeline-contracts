@@ -79,6 +79,17 @@ contract PipelineTestSetUp is Test {
 
         vm.prank(whitelistAdmin);
         whitelistRegistry.allowSystemAddress(address(withdrawalQueue));
+
+        uint64 roleId = uint64(bytes8(keccak256("BURNER")));
+
+        vm.prank(admin);
+        authority.grantRole(roleId, address(withdrawalQueue), 0);
+
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = PipelineUSD.burn.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
     }
 
     function _setUpTrustee() private {
@@ -87,9 +98,8 @@ contract PipelineTestSetUp is Test {
         vm.prank(admin);
         authority.grantRole(roleId, trustee, 0);
 
-        bytes4[] memory selectors = new bytes4[](2);
+        bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = PipelineUSD.mint.selector;
-        selectors[1] = PipelineUSD.burn.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
@@ -153,7 +163,7 @@ contract PipelineTestSetUp is Test {
         authority.grantRole(roleId, queueManager, 0);
 
         bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = WithdrawalQueueUpgradeable.increaseClaimable.selector;
+        selectors[0] = WithdrawalQueueUpgradeable.fundWithdrawals.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(withdrawalQueue), selectors, roleId);
