@@ -40,7 +40,7 @@ contract PipelineAccessTest is PipelineTestSetUp {
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        plUsd.burn(caller, 1);
+        plUsd.burn(1);
     }
 
     function testFuzz_pauserAccess(address caller) public {
@@ -80,6 +80,6 @@ contract PipelineAccessTest is PipelineTestSetUp {
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        withdrawalQueue.increaseClaimable(1_000_000);
+        withdrawalQueue.fundWithdrawals(1_000_000, caller);
     }
 }

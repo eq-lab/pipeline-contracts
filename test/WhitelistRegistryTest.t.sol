@@ -35,7 +35,7 @@ contract WhitelistRegistryTest is PipelineTestSetUp {
     }
 
     function testFuzz_disallow(address user) public {
-        vm.assume(user != address(0));
+        vm.assume(user != address(0) && !whitelistRegistry.isAllowed(user));
 
         vm.prank(whitelistAdmin);
         whitelistRegistry.allowSystemAddress(user);
@@ -57,7 +57,7 @@ contract WhitelistRegistryTest is PipelineTestSetUp {
     }
 
     function testFuzz_prolongateAllowance(address user, uint256 until) public {
-        vm.assume(user != address(0));
+        vm.assume(user != address(0) && !whitelistRegistry.isAllowed(user));
         vm.assume(until != type(uint256).max && until > block.timestamp);
 
         vm.prank(whitelistAdmin);

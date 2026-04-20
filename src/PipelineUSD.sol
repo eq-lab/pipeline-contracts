@@ -3,6 +3,7 @@ pragma solidity =0.8.34;
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {
+    ERC20Upgradeable,
     ERC20PausableUpgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
 import {
@@ -32,8 +33,8 @@ contract PipelineUSD is
         _mint(account, value);
     }
 
-    function burn(address account, uint256 value) external restricted {
-        _burn(account, value);
+    function burn(uint256 value) external restricted {
+        _burn(msg.sender, value);
     }
 
     function pause() external restricted {

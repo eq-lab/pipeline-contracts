@@ -16,6 +16,9 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
 
         vm.prank(whitelistAdmin);
         whitelistRegistry.allowUser(user, type(uint256).max);
+
+        vm.prank(whitelistAdmin);
+        whitelistRegistry.allowSystemAddress(address(0));
     }
 
     function test_setUp() public view {
@@ -69,7 +72,7 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         usdc.approve(address(withdrawalQueue), amount);
 
         vm.prank(queueManager);
-        uint256 claimable = withdrawalQueue.increaseClaimable(amount);
+        uint256 claimable = withdrawalQueue.fundWithdrawals(amount, queueManager);
 
         assertEq(claimable, metadataBefore.claimable + amount);
 
@@ -96,7 +99,7 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         usdc.approve(address(withdrawalQueue), withdrawalAmount);
 
         vm.prank(queueManager);
-        withdrawalQueue.increaseClaimable(withdrawalAmount);
+        withdrawalQueue.fundWithdrawals(withdrawalAmount, queueManager);
 
         uint256 userBalanceBefore = usdc.balanceOf(user);
         uint256 queueBalanceBefore = usdc.balanceOf(address(withdrawalQueue));
@@ -127,7 +130,7 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
 
         vm.prank(queueManager);
         vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueZeroAmount.selector));
-        withdrawalQueue.increaseClaimable(0);
+        withdrawalQueue.fundWithdrawals(0, queueManager);
 
         uint256 amount = 1_000;
 
@@ -145,7 +148,7 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         usdc.approve(address(withdrawalQueue), amount);
 
         vm.prank(queueManager);
-        withdrawalQueue.increaseClaimable(amount);
+        withdrawalQueue.fundWithdrawals(amount, queueManager);
 
         address wrongClaimant = makeAddr("wrongClaimant");
         vm.prank(wrongClaimant);
