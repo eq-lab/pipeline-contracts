@@ -5,7 +5,7 @@ import {
     AccessManagedUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
 
-import {IWhitelist} from "./IWhitelist.sol";
+import {IWhitelist} from "../interfaces/IWhitelist.sol";
 
 contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
     /// @custom:storage-location erc7201:pipeline.storage.WhitelistAccess

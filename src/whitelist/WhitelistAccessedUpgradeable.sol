@@ -3,7 +3,7 @@ pragma solidity ^0.8.34;
 
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
-import {IWhitelist} from "./IWhitelist.sol";
+import {IWhitelist} from "../interfaces/IWhitelist.sol";
 
 contract WhitelistAccessedUpgradeable is Initializable {
     error WhitelistAccessedNoAccess(address);

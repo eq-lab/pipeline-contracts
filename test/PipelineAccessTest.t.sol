@@ -5,6 +5,7 @@ import {IAccessManaged} from "@openzeppelin/contracts/access/manager/IAccessMana
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
+import {ILoanRegistry} from "../src/interfaces/ILoanRegistry.sol";
 
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 
@@ -73,6 +74,10 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         UUPSUpgradeable(address(withdrawalQueue)).upgradeToAndCall(address(withdrawalQueue), "");
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        UUPSUpgradeable(address(loanRegistry)).upgradeToAndCall(address(loanRegistry), "");
     }
 
     function testFuzz_queueManagerAccess(address caller) public {
@@ -81,5 +86,42 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         withdrawalQueue.fundWithdrawals(1_000_000, caller);
+    }
+
+    function testFuzz_loanRegistryAccess(address caller) public {
+        vm.assume(caller != loanRegistryManager);
+
+        ILoanRegistry.ImmutableLoanData memory loanData = ILoanRegistry.ImmutableLoanData({
+            docHash: bytes32(0),
+            principal: 0,
+            originator: caller,
+            borrower: caller,
+            commodity: bytes32(0),
+            originatedAt: uint64(block.timestamp)
+        });
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        loanRegistry.mintLoan(caller, loanData, 0, bytes32(0));
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        loanRegistry.updateStatus(0, ILoanRegistry.LoanStatus.WatchList);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        loanRegistry.updateCCR(0, 0);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        loanRegistry.updateLocation(0, bytes32(0));
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        loanRegistry.setDefault(0);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        loanRegistry.closeLoan(0, ILoanRegistry.ClosureReason.None);
     }
 }

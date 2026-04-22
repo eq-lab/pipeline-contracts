@@ -11,6 +11,7 @@ import {PipelineUSD} from "../src/PipelineUSD.sol";
 import {StakedPipelineUSD} from "../src/StakedPipelineUSD.sol";
 import {WhitelistRegistry} from "../src/WhitelistRegistry.sol";
 import {PipelineWithdrawalQueue} from "../src/PipelineWithdrawalQueue.sol";
+import {PipelineLoanRegistry} from "../src/PipelineLoanRegistry.sol";
 import {WhitelistAccessUpgradeable} from "../src/whitelist/WhitelistAccessUpgradeable.sol";
 import {WithdrawalQueueUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueUpgradeable.sol";
 
@@ -22,6 +23,7 @@ contract PipelineTestSetUp is Test {
     PipelineUSD public plUsd;
     StakedPipelineUSD public sPlUsd;
     PipelineWithdrawalQueue public withdrawalQueue;
+    PipelineLoanRegistry public loanRegistry;
     USDCMock public usdc = new USDCMock();
 
     address public admin = makeAddr("admin");
@@ -30,16 +32,19 @@ contract PipelineTestSetUp is Test {
     address public pauser = makeAddr("pauser");
     address public whitelistAdmin = makeAddr("whitelistAdmin");
     address public queueManager = makeAddr("queueManager");
+    address public loanRegistryManager = makeAddr("loanRegistryManager");
 
     function setUp() public virtual {
         _setUpAuthority();
         _setUpWhitelistRegistry();
         _setUpPlUsd();
         _setUpSPlUsd();
+        _setupLoanRegistry();
 
         _setUpTrustee();
         _setUpPauser();
         _setUpWhitelistAdmin();
+        _setupLoanRegistryManager();
 
         _setupWithdrawalQueue();
         _setUpQueueManager();
@@ -92,6 +97,14 @@ contract PipelineTestSetUp is Test {
         authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
     }
 
+    function _setupLoanRegistry() private {
+        PipelineLoanRegistry implementation = new PipelineLoanRegistry();
+        bytes memory data = abi.encodeWithSelector(
+            PipelineLoanRegistry.initialize.selector, address(authority), "Loan registry name", "Loan registry symbol"
+        );
+        loanRegistry = PipelineLoanRegistry(address(new ERC1967Proxy(address(implementation), data)));
+    }
+
     function _setUpTrustee() private {
         uint64 roleId = uint64(bytes8(keccak256("TRUSTEE_ROLE")));
 
@@ -139,6 +152,9 @@ contract PipelineTestSetUp is Test {
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(withdrawalQueue), selectors, roleId);
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(loanRegistry), selectors, roleId);
     }
 
     function _setUpWhitelistAdmin() private {
@@ -167,5 +183,23 @@ contract PipelineTestSetUp is Test {
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(withdrawalQueue), selectors, roleId);
+    }
+
+    function _setupLoanRegistryManager() private {
+        uint64 roleId = uint64(bytes8(keccak256("LOAN_REGISTRY_MANAGER")));
+
+        vm.prank(admin);
+        authority.grantRole(roleId, loanRegistryManager, 0);
+
+        bytes4[] memory selectors = new bytes4[](6);
+        selectors[0] = PipelineLoanRegistry.mintLoan.selector;
+        selectors[1] = PipelineLoanRegistry.updateStatus.selector;
+        selectors[2] = PipelineLoanRegistry.updateCCR.selector;
+        selectors[3] = PipelineLoanRegistry.updateLocation.selector;
+        selectors[4] = PipelineLoanRegistry.setDefault.selector;
+        selectors[5] = PipelineLoanRegistry.closeLoan.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(loanRegistry), selectors, roleId);
     }
 }
