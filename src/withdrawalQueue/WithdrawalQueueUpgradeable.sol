@@ -4,11 +4,11 @@ pragma solidity ^0.8.34;
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {IERC20Burnable} from "../interfaces/IERC20Burnable.sol";
+import {IERC20Managed} from "../interfaces/IERC20Managed.sol";
 
 abstract contract WithdrawalQueueUpgradeable is Initializable {
     using SafeERC20 for IERC20;
-    using SafeERC20 for IERC20Burnable;
+    using SafeERC20 for IERC20Managed;
 
     struct WithdrawalQueueMetadata {
         // cumulative total of all withdrawal requests included the ones that have already been claimed
@@ -41,7 +41,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
     /// @custom:storage-location erc7201:pipeline.storage.WithdrawalQueue
     struct WithdrawalQueueStorage {
         WithdrawalQueueMetadata queueMetadata;
-        IERC20Burnable fromToken;
+        IERC20Managed fromToken;
         IERC20 intoToken;
         mapping(uint256 requestId => WithdrawalRequest) withdrawalRequests;
     }
@@ -62,7 +62,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
 
     function __WithdrawalQueue_init_unchained(address _fromToken, address _intoToken) internal onlyInitializing {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
-        $.fromToken = IERC20Burnable(_fromToken);
+        $.fromToken = IERC20Managed(_fromToken);
         $.intoToken = IERC20(_intoToken);
     }
 

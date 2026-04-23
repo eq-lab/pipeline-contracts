@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.34;
 
-import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-
 import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
 
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 
-contract WhitelistRegistryTest is PipelineTestSetUp {
+contract StakedPipelineUSDTest is PipelineTestSetUp {
     address public user = makeAddr("user");
 
     function setUp() public override {
