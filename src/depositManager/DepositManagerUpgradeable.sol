@@ -13,6 +13,15 @@ contract DepositManagerUpgradeable is Initializable, AccessManagedUpgradeable {
     using SafeERC20 for IERC20;
     using SafeERC20 for IERC20Managed;
 
+    event Deposit(address indexed user, uint256 amount);
+    event CustodianSet(address newCustodian);
+    event MinDepositSet(uint256 newMinDeposit);
+
+    error DepositManagerZeroAmount();
+    error DepositManagerLessThanMinAmount();
+    error DepositManagerSameValue();
+    error DepositManagerZeroAddress();
+
     /// @custom:storage-location erc7201:pipeline.storage.DepositManager
     struct DepositManagerStorage {
         uint256 minDeposit;
@@ -60,15 +69,23 @@ contract DepositManagerUpgradeable is Initializable, AccessManagedUpgradeable {
     }
 
     function setCustodian(address _custodian) external restricted {
+        if (_custodian == address(0)) revert DepositManagerZeroAddress();
+
+        DepositManagerStorage storage $ = _getDepositManagerStorage();
+        if ($.custodian == _custodian) revert DepositManagerSameValue();
+
         _getDepositManagerStorage().custodian = _custodian;
+
+        emit CustodianSet(_custodian);
     }
 
     function setMinDeposit(uint256 _minDeposit) external restricted {
         DepositManagerStorage storage $ = _getDepositManagerStorage();
 
-        if ($.minDeposit == _minDeposit) revert();
-
+        if ($.minDeposit == _minDeposit) revert DepositManagerSameValue();
         $.minDeposit = _minDeposit;
+
+        emit MinDepositSet(_minDeposit);
     }
 
     function minDeposit() external view returns (uint256) {
@@ -85,12 +102,22 @@ contract DepositManagerUpgradeable is Initializable, AccessManagedUpgradeable {
         DepositManagerStorage storage $ = _getDepositManagerStorage();
         $.fromToken.safeTransferFrom(msg.sender, $.custodian, amount);
         $.intoToken.mint(msg.sender, amount);
+
+        emit Deposit(msg.sender, amount);
     }
 
     function _preDepositHook(uint256 amount) internal virtual {
-        if (amount == 0) revert();
+        if (amount == 0) revert DepositManagerZeroAmount();
 
         DepositManagerStorage storage $ = _getDepositManagerStorage();
-        if (amount < $.minDeposit) revert();
+        if (amount < $.minDeposit) revert DepositManagerLessThanMinAmount();
+    }
+
+    function _depositedToken() internal view returns (address) {
+        return address(_getDepositManagerStorage().fromToken);
+    }
+
+    function _mintedToken() internal view returns (address) {
+        return address(_getDepositManagerStorage().intoToken);
     }
 }

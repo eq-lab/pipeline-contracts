@@ -10,9 +10,13 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {PipelineUSD} from "../src/PipelineUSD.sol";
 import {StakedPipelineUSD} from "../src/StakedPipelineUSD.sol";
 import {WhitelistRegistry} from "../src/WhitelistRegistry.sol";
+import {PipelineDepositManager} from "../src/PipelineDepositManager.sol";
 import {PipelineWithdrawalQueue} from "../src/PipelineWithdrawalQueue.sol";
 import {PipelineLoanRegistry} from "../src/PipelineLoanRegistry.sol";
+
 import {WhitelistAccessUpgradeable} from "../src/whitelist/WhitelistAccessUpgradeable.sol";
+import {DepositManagerUpgradeable} from "../src/depositManager/DepositManagerUpgradeable.sol";
+import {RateLimiterUpgradeable} from "../src/depositManager/RateLimiterUpgradeable.sol";
 import {WithdrawalQueueUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueUpgradeable.sol";
 
 import {USDCMock} from "./mocks/USDCMock.t.sol";
@@ -22,6 +26,7 @@ contract PipelineTestSetUp is Test {
     WhitelistRegistry public whitelistRegistry;
     PipelineUSD public plUsd;
     StakedPipelineUSD public sPlUsd;
+    PipelineDepositManager public depositManager;
     PipelineWithdrawalQueue public withdrawalQueue;
     PipelineLoanRegistry public loanRegistry;
     USDCMock public usdc = new USDCMock();
@@ -31,8 +36,15 @@ contract PipelineTestSetUp is Test {
     address public upgrader = makeAddr("upgrader");
     address public pauser = makeAddr("pauser");
     address public whitelistAdmin = makeAddr("whitelistAdmin");
+    address public depositManagerManager = makeAddr("depositManagerManager");
     address public queueManager = makeAddr("queueManager");
     address public loanRegistryManager = makeAddr("loanRegistryManager");
+    address public custodian = makeAddr("custodian");
+
+    uint256 minDeposit = 1_000_000_000;
+    RateLimiterUpgradeable.RateLimitConfig public rateLimitConfigDefault = RateLimiterUpgradeable.RateLimitConfig({
+        txLimit: 5_000_000_000_000, windowLimit: 10_000_000_000_000, window: 86400 * 7, shift: 86400 * 3
+    });
 
     function setUp() public virtual {
         _setUpAuthority();
@@ -45,6 +57,9 @@ contract PipelineTestSetUp is Test {
         _setUpPauser();
         _setUpWhitelistAdmin();
         _setupLoanRegistryManager();
+
+        _setUpDepositManager();
+        _setUpDepositManagerManager();
 
         _setupWithdrawalQueue();
         _setUpQueueManager();
@@ -73,6 +88,25 @@ contract PipelineTestSetUp is Test {
         StakedPipelineUSD implementation = new StakedPipelineUSD();
         bytes memory data = abi.encodeWithSelector(StakedPipelineUSD.initialize.selector, plUsd, address(authority));
         sPlUsd = StakedPipelineUSD(address(new ERC1967Proxy(address(implementation), data)));
+    }
+
+    function _setUpDepositManager() private {
+        PipelineDepositManager implementation = new PipelineDepositManager();
+        bytes memory data = abi.encodeWithSelector(
+            PipelineDepositManager.initialize.selector,
+            authority,
+            custodian,
+            usdc,
+            plUsd,
+            minDeposit,
+            rateLimitConfigDefault
+        );
+        depositManager = PipelineDepositManager(address(new ERC1967Proxy(address(implementation), data)));
+
+        uint64 roleId = uint64(bytes8(keccak256("TRUSTEE_ROLE")));
+
+        vm.prank(admin);
+        authority.grantRole(roleId, address(depositManager), 0);
     }
 
     function _setupWithdrawalQueue() private {
@@ -151,6 +185,9 @@ contract PipelineTestSetUp is Test {
         authority.setTargetFunctionRole(address(whitelistRegistry), selectors, roleId);
 
         vm.prank(admin);
+        authority.setTargetFunctionRole(address(depositManager), selectors, roleId);
+
+        vm.prank(admin);
         authority.setTargetFunctionRole(address(withdrawalQueue), selectors, roleId);
 
         vm.prank(admin);
@@ -170,6 +207,23 @@ contract PipelineTestSetUp is Test {
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(whitelistRegistry), selectors, roleId);
+    }
+
+    function _setUpDepositManagerManager() private {
+        uint64 roleId = uint64(bytes8(keccak256("DEPOSIT_MANAGER_MANAGER")));
+        vm.prank(admin);
+        authority.grantRole(roleId, depositManagerManager, 0);
+
+        bytes4[] memory selectors = new bytes4[](6);
+        selectors[0] = DepositManagerUpgradeable.setMinDeposit.selector;
+        selectors[1] = DepositManagerUpgradeable.setCustodian.selector;
+        selectors[2] = RateLimiterUpgradeable.increaseTxLimit.selector;
+        selectors[3] = RateLimiterUpgradeable.decreaseTxLimit.selector;
+        selectors[4] = RateLimiterUpgradeable.increaseWindowLimit.selector;
+        selectors[5] = RateLimiterUpgradeable.decreaseWindowLimit.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(depositManager), selectors, roleId);
     }
 
     function _setUpQueueManager() private {

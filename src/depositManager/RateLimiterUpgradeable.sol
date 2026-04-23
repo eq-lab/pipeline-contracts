@@ -14,6 +14,16 @@ contract RateLimiterUpgradeable is Initializable, AccessManagedUpgradeable {
         uint256 shift;
     }
 
+    event TxLimitIncreased(uint256 newTxLimit);
+    event TxLimitDecreased(uint256 newTxLimit);
+    event WindowLimitIncreased(uint256 newWindowLimit);
+    event WindowLimitDecreased(uint256 newWindowLimit);
+    event RateLimitApplied(uint256 timestamp, uint256 updatedWindowCumulativeMint);
+
+    error RateLimiterExceedsTxLimit();
+    error RateLimiterExceedsWindowLimit();
+    error RateLimiterWrongValue();
+
     /// @custom:storage-location erc7201:pipeline.storage.RateLimiter
     struct RateLimiterStorage {
         RateLimitConfig rateLimitConfig;
@@ -40,35 +50,40 @@ contract RateLimiterUpgradeable is Initializable, AccessManagedUpgradeable {
     }
 
     function __RateLimiter_init_unchained(RateLimitConfig calldata _rateLimitConfig) internal onlyInitializing {
-        _getRateLimiterStorage().rateLimitConfig = _rateLimitConfig;
+        RateLimiterStorage storage $ = _getRateLimiterStorage();
+        $.rateLimitConfig = _rateLimitConfig;
     }
 
     function increaseTxLimit(uint256 newTxLimit) external restricted {
         RateLimiterStorage storage $ = _getRateLimiterStorage();
-        if ($.rateLimitConfig.txLimit >= newTxLimit) revert();
+        if ($.rateLimitConfig.txLimit >= newTxLimit) revert RateLimiterWrongValue();
 
         $.rateLimitConfig.txLimit = newTxLimit;
+        emit TxLimitIncreased(newTxLimit);
     }
 
     function decreaseTxLimit(uint256 newTxLimit) external restricted {
         RateLimiterStorage storage $ = _getRateLimiterStorage();
-        if ($.rateLimitConfig.txLimit <= newTxLimit) revert();
+        if ($.rateLimitConfig.txLimit <= newTxLimit) revert RateLimiterWrongValue();
 
         $.rateLimitConfig.txLimit = newTxLimit;
+        emit TxLimitDecreased(newTxLimit);
     }
 
     function increaseWindowLimit(uint256 newWindowLimit) external restricted {
         RateLimiterStorage storage $ = _getRateLimiterStorage();
-        if ($.rateLimitConfig.windowLimit >= newWindowLimit) revert();
+        if ($.rateLimitConfig.windowLimit >= newWindowLimit) revert RateLimiterWrongValue();
 
-        $.rateLimitConfig.txLimit = newWindowLimit;
+        $.rateLimitConfig.windowLimit = newWindowLimit;
+        emit WindowLimitIncreased(newWindowLimit);
     }
 
     function decreaseWindowLimit(uint256 newWindowLimit) external restricted {
         RateLimiterStorage storage $ = _getRateLimiterStorage();
-        if ($.rateLimitConfig.windowLimit <= newWindowLimit) revert();
+        if ($.rateLimitConfig.windowLimit <= newWindowLimit) revert RateLimiterWrongValue();
 
-        $.rateLimitConfig.txLimit = newWindowLimit;
+        $.rateLimitConfig.windowLimit = newWindowLimit;
+        emit WindowLimitDecreased(newWindowLimit);
     }
 
     function rateLimitConfig() external view returns (RateLimitConfig memory) {
@@ -86,17 +101,18 @@ contract RateLimiterUpgradeable is Initializable, AccessManagedUpgradeable {
     function _applyRateLimits(uint256 amount) internal {
         RateLimiterStorage storage $ = _getRateLimiterStorage();
 
-        if ($.rateLimitConfig.txLimit < amount) revert();
+        if ($.rateLimitConfig.txLimit < amount) revert RateLimiterExceedsTxLimit();
 
         uint256 currentWindowCumulativeMint = _currentWindowCumulativeMint();
-        if (currentWindowCumulativeMint + amount > $.rateLimitConfig.windowLimit) revert();
+        if (currentWindowCumulativeMint + amount > $.rateLimitConfig.windowLimit) {
+            revert RateLimiterExceedsWindowLimit();
+        }
 
         $.lastMintTimestamp = block.timestamp;
+        uint256 updatedWindowCumulativeMint = currentWindowCumulativeMint + amount;
         $.windowCumulativeMint = currentWindowCumulativeMint + amount;
-    }
 
-    function _updateRateLimitConfig(RateLimitConfig calldata newRateLimitConfig) internal {
-        _getRateLimiterStorage().rateLimitConfig = newRateLimitConfig;
+        emit RateLimitApplied(block.timestamp, updatedWindowCumulativeMint);
     }
 
     function _currentWindowCumulativeMint() internal view returns (uint256) {
@@ -105,8 +121,8 @@ contract RateLimiterUpgradeable is Initializable, AccessManagedUpgradeable {
         uint256 window = $.rateLimitConfig.window;
         uint256 shift = $.rateLimitConfig.shift;
 
-        uint256 currentWindowIndex = (block.timestamp - shift) / window;
-        uint256 prevMintWindowIndex = ($.lastMintTimestamp - shift) / window;
+        uint256 currentWindowIndex = (block.timestamp + shift) / window;
+        uint256 prevMintWindowIndex = ($.lastMintTimestamp + shift) / window;
 
         return currentWindowIndex == prevMintWindowIndex ? $.windowCumulativeMint : 0;
     }

@@ -73,11 +73,43 @@ contract PipelineAccessTest is PipelineTestSetUp {
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        UUPSUpgradeable(address(depositManager)).upgradeToAndCall(address(depositManager), "");
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         UUPSUpgradeable(address(withdrawalQueue)).upgradeToAndCall(address(withdrawalQueue), "");
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         UUPSUpgradeable(address(loanRegistry)).upgradeToAndCall(address(loanRegistry), "");
+    }
+
+    function testFuzz_depositManagerAccess(address caller) public {
+        vm.assume(caller != depositManagerManager);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        depositManager.setMinDeposit(1);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        depositManager.setCustodian(caller);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        depositManager.increaseTxLimit(1);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        depositManager.decreaseTxLimit(1);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        depositManager.increaseWindowLimit(1);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        depositManager.decreaseWindowLimit(1);
     }
 
     function testFuzz_queueManagerAccess(address caller) public {
