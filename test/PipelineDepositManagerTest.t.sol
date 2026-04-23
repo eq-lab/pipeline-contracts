@@ -142,7 +142,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
     function test_setMinDeposit(uint256 newMinDeposit) public {
         vm.assume(newMinDeposit != depositManager.minDeposit());
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         depositManager.setMinDeposit(newMinDeposit);
 
         assertEq(depositManager.minDeposit(), newMinDeposit);
@@ -151,7 +151,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
     function test_setMinDepositReverts() public {
         uint256 newMinDeposit = depositManager.minDeposit();
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         vm.expectRevert(abi.encodeWithSelector(DepositManagerUpgradeable.DepositManagerSameValue.selector));
         depositManager.setMinDeposit(newMinDeposit);
     }
@@ -159,7 +159,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
     function test_setCustodian(address newCustodian) public {
         vm.assume(newCustodian != depositManager.custodian() && newCustodian != address(0));
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         depositManager.setCustodian(newCustodian);
 
         assertEq(depositManager.custodian(), newCustodian);
@@ -168,11 +168,11 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
     function test_setCustodianReverts() public {
         address newCustodian = depositManager.custodian();
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         vm.expectRevert(abi.encodeWithSelector(DepositManagerUpgradeable.DepositManagerSameValue.selector));
         depositManager.setCustodian(newCustodian);
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         vm.expectRevert(abi.encodeWithSelector(DepositManagerUpgradeable.DepositManagerZeroAddress.selector));
         depositManager.setCustodian(address(0));
     }
@@ -181,7 +181,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
         vm.assume(newTxLimit > rateLimitConfigBefore.txLimit);
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         depositManager.increaseTxLimit(newTxLimit);
 
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfig = depositManager.rateLimitConfig();
@@ -195,7 +195,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
         vm.assume(newTxLimit <= rateLimitConfigBefore.txLimit);
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         vm.expectRevert(abi.encodeWithSelector(RateLimiterUpgradeable.RateLimiterWrongValue.selector));
         depositManager.increaseTxLimit(newTxLimit);
     }
@@ -204,7 +204,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
         vm.assume(newTxLimit < rateLimitConfigBefore.txLimit);
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         depositManager.decreaseTxLimit(newTxLimit);
 
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfig = depositManager.rateLimitConfig();
@@ -218,7 +218,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
         vm.assume(newTxLimit >= rateLimitConfigBefore.txLimit);
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         vm.expectRevert(abi.encodeWithSelector(RateLimiterUpgradeable.RateLimiterWrongValue.selector));
         depositManager.decreaseTxLimit(newTxLimit);
     }
@@ -227,7 +227,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
         vm.assume(newWindowLimit > rateLimitConfigBefore.windowLimit);
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         depositManager.increaseWindowLimit(newWindowLimit);
 
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfig = depositManager.rateLimitConfig();
@@ -241,7 +241,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
         vm.assume(newWindowLimit <= rateLimitConfigBefore.windowLimit);
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         vm.expectRevert(abi.encodeWithSelector(RateLimiterUpgradeable.RateLimiterWrongValue.selector));
         depositManager.increaseWindowLimit(newWindowLimit);
     }
@@ -250,7 +250,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
         vm.assume(newWindowLimit < rateLimitConfigBefore.windowLimit);
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         depositManager.decreaseWindowLimit(newWindowLimit);
 
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfig = depositManager.rateLimitConfig();
@@ -264,7 +264,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
         vm.assume(newWindowLimit >= rateLimitConfigBefore.windowLimit);
 
-        vm.prank(depositManagerManager);
+        vm.prank(depositManagerAdmin);
         vm.expectRevert(abi.encodeWithSelector(RateLimiterUpgradeable.RateLimiterWrongValue.selector));
         depositManager.decreaseWindowLimit(newWindowLimit);
     }

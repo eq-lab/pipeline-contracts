@@ -85,7 +85,7 @@ contract PipelineAccessTest is PipelineTestSetUp {
     }
 
     function testFuzz_depositManagerAccess(address caller) public {
-        vm.assume(caller != depositManagerManager);
+        vm.assume(caller != depositManagerAdmin);
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));

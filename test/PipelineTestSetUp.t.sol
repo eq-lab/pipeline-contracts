@@ -36,7 +36,7 @@ contract PipelineTestSetUp is Test {
     address public upgrader = makeAddr("upgrader");
     address public pauser = makeAddr("pauser");
     address public whitelistAdmin = makeAddr("whitelistAdmin");
-    address public depositManagerManager = makeAddr("depositManagerManager");
+    address public depositManagerAdmin = makeAddr("depositManagerAdmin");
     address public queueManager = makeAddr("queueManager");
     address public loanRegistryManager = makeAddr("loanRegistryManager");
     address public custodian = makeAddr("custodian");
@@ -59,7 +59,7 @@ contract PipelineTestSetUp is Test {
         _setupLoanRegistryManager();
 
         _setUpDepositManager();
-        _setUpDepositManagerManager();
+        _setUpDepositManagerAdmin();
 
         _setupWithdrawalQueue();
         _setUpQueueManager();
@@ -209,10 +209,10 @@ contract PipelineTestSetUp is Test {
         authority.setTargetFunctionRole(address(whitelistRegistry), selectors, roleId);
     }
 
-    function _setUpDepositManagerManager() private {
-        uint64 roleId = uint64(bytes8(keccak256("DEPOSIT_MANAGER_MANAGER")));
+    function _setUpDepositManagerAdmin() private {
+        uint64 roleId = uint64(bytes8(keccak256("DEPOSIT_MANAGER_ADMIN")));
         vm.prank(admin);
-        authority.grantRole(roleId, depositManagerManager, 0);
+        authority.grantRole(roleId, depositManagerAdmin, 0);
 
         bytes4[] memory selectors = new bytes4[](6);
         selectors[0] = DepositManagerUpgradeable.setMinDeposit.selector;
