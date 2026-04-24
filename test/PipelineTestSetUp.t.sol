@@ -13,6 +13,7 @@ import {WhitelistRegistry} from "../src/WhitelistRegistry.sol";
 import {PipelineDepositManager} from "../src/PipelineDepositManager.sol";
 import {PipelineWithdrawalQueue} from "../src/PipelineWithdrawalQueue.sol";
 import {PipelineLoanRegistry} from "../src/PipelineLoanRegistry.sol";
+import {PipelineYieldMinterV1} from "../src/PipelineYieldMinterV1.sol";
 
 import {WhitelistAccessUpgradeable} from "../src/whitelist/WhitelistAccessUpgradeable.sol";
 import {DepositManagerUpgradeable} from "../src/depositManager/DepositManagerUpgradeable.sol";
@@ -26,16 +27,21 @@ contract PipelineTestSetUp is Test {
     WhitelistRegistry public whitelistRegistry;
     PipelineUSD public plUsd;
     StakedPipelineUSD public sPlUsd;
+    PipelineYieldMinterV1 public yieldMinter;
     PipelineDepositManager public depositManager;
     PipelineWithdrawalQueue public withdrawalQueue;
     PipelineLoanRegistry public loanRegistry;
     USDCMock public usdc = new USDCMock();
+
+    uint256 yieldMinterAuthorityPrivateKey = uint256(bytes32("yieldMinterAuthority"));
 
     address public admin = makeAddr("admin");
     address public trustee = makeAddr("trustee");
     address public upgrader = makeAddr("upgrader");
     address public pauser = makeAddr("pauser");
     address public whitelistAdmin = makeAddr("whitelistAdmin");
+    address public yieldMinterAuthority = vm.addr(yieldMinterAuthorityPrivateKey);
+    address public yieldMinterManager = makeAddr("yieldMinterManager");
     address public depositManagerAdmin = makeAddr("depositManagerAdmin");
     address public queueManager = makeAddr("queueManager");
     address public loanRegistryManager = makeAddr("loanRegistryManager");
@@ -51,9 +57,11 @@ contract PipelineTestSetUp is Test {
         _setUpWhitelistRegistry();
         _setUpPlUsd();
         _setUpSPlUsd();
+        _setUpYieldMinter();
         _setupLoanRegistry();
 
         _setUpTrustee();
+        _setUpYieldMinterManager();
         _setUpPauser();
         _setUpWhitelistAdmin();
         _setupLoanRegistryManager();
@@ -88,6 +96,14 @@ contract PipelineTestSetUp is Test {
         StakedPipelineUSD implementation = new StakedPipelineUSD();
         bytes memory data = abi.encodeWithSelector(StakedPipelineUSD.initialize.selector, plUsd, address(authority));
         sPlUsd = StakedPipelineUSD(address(new ERC1967Proxy(address(implementation), data)));
+    }
+
+    function _setUpYieldMinter() private {
+        yieldMinter = new PipelineYieldMinterV1(address(authority), yieldMinterAuthority, address(sPlUsd));
+        uint64 roleId = uint64(bytes8(keccak256("TRUSTEE_ROLE")));
+
+        vm.prank(admin);
+        authority.grantRole(roleId, address(yieldMinter), 0);
     }
 
     function _setUpDepositManager() private {
@@ -150,6 +166,19 @@ contract PipelineTestSetUp is Test {
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
+    }
+
+    function _setUpYieldMinterManager() private {
+        uint64 roleId = uint64(bytes8(keccak256("YIELD_MINTER_MANAGER")));
+
+        vm.prank(admin);
+        authority.grantRole(roleId, yieldMinterManager, 0);
+
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = PipelineYieldMinterV1.mintYield.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(yieldMinter), selectors, roleId);
     }
 
     function _setUpPauser() private {
