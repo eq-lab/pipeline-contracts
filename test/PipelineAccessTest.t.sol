@@ -84,6 +84,13 @@ contract PipelineAccessTest is PipelineTestSetUp {
         UUPSUpgradeable(address(loanRegistry)).upgradeToAndCall(address(loanRegistry), "");
     }
 
+    function testFuzz_yieldMintAccess(address caller) public {
+        vm.assume(caller != yieldMinterManager);
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        yieldMinter.mintYield(1, "");
+    }
+
     function testFuzz_depositManagerAccess(address caller) public {
         vm.assume(caller != depositManagerAdmin);
 
