@@ -100,10 +100,16 @@ contract PipelineTestSetUp is Test {
 
     function _setUpYieldMinter() private {
         yieldMinter = new PipelineYieldMinterV1(address(authority), yieldMinterAuthority, address(sPlUsd));
-        uint64 roleId = uint64(bytes8(keccak256("TRUSTEE_ROLE")));
+        uint64 roleId = uint64(bytes8(keccak256("MINTER")));
 
         vm.prank(admin);
         authority.grantRole(roleId, address(yieldMinter), 0);
+
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = PipelineUSD.mint.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
     }
 
     function _setUpDepositManager() private {
@@ -119,10 +125,16 @@ contract PipelineTestSetUp is Test {
         );
         depositManager = PipelineDepositManager(address(new ERC1967Proxy(address(implementation), data)));
 
-        uint64 roleId = uint64(bytes8(keccak256("TRUSTEE_ROLE")));
+        uint64 roleId = uint64(bytes8(keccak256("MINTER")));
 
         vm.prank(admin);
         authority.grantRole(roleId, address(depositManager), 0);
+
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = PipelineUSD.mint.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
     }
 
     function _setupWithdrawalQueue() private {
@@ -156,7 +168,7 @@ contract PipelineTestSetUp is Test {
     }
 
     function _setUpTrustee() private {
-        uint64 roleId = uint64(bytes8(keccak256("TRUSTEE_ROLE")));
+        uint64 roleId = uint64(bytes8(keccak256("MINTER")));
 
         vm.prank(admin);
         authority.grantRole(roleId, trustee, 0);
