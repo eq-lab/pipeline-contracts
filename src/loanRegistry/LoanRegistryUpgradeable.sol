@@ -13,6 +13,13 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
     event LocationUpdated(uint256 indexed loanId, bytes32 indexed newLocation);
     event LoanDefaulted(uint256 indexed loanId);
     event LoanClosed(uint256 indexed loanId, ClosureReason indexed reason);
+    event Repayment(
+        uint256 indexed tokenId,
+        uint256 offtakerAmount,
+        uint256 seniorPrincipal,
+        uint256 seniorInterest,
+        uint256 equityAmount
+    );
 
     error LoanRegistryNonExistentLoanId(uint256);
     error LoanRegistryAlreadyClosed(uint256);
@@ -20,11 +27,16 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
     error LoanRegistrySameStatus(uint256 loanId);
     error LoanRegistryInapplicableStatus(uint256 loanId, LoanStatus status);
     error LoanRegistryNonTransferrable();
+    error LoanRegistryWrongRepaymentData();
 
     /// @custom:storage-location erc7201:pipeline.storage.LoanRegistry
     struct LoanRegistryStorage {
         uint256 nextLoanId;
-        mapping(uint256 index => ImmutableLoanData) immutableLoanData;
+        uint256 offtakerReceivedTotal;
+        uint256 seniorPrincipalRepaid;
+        uint256 seniorInterestRepaid;
+        uint256 equityDistributed;
+        mapping(uint256 index => string) metadataURI;
         mapping(uint256 index => MutableLoanData) mutableLoanData;
     }
 
@@ -45,8 +57,8 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
 
     function __LoanRegistry_init_unchained() internal onlyInitializing {}
 
-    function immutableLoanData(uint256 loanId) external view returns (ImmutableLoanData memory) {
-        return _getLoanRegistryStorage().immutableLoanData[loanId];
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        return _getLoanRegistryStorage().metadataURI[tokenId];
     }
 
     function mutableLoanData(uint256 loanId) external view returns (MutableLoanData memory) {
@@ -57,14 +69,32 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
         return _getLoanRegistryStorage().nextLoanId;
     }
 
-    function _mintLoan(address to, ImmutableLoanData calldata data, uint64 initialMaturity, bytes32 location)
+    function repaymentData()
+        external
+        view
+        returns (
+            uint256 offtakerReceivedTotal,
+            uint256 seniorPrincipalRepaid,
+            uint256 seniorInterestRepaid,
+            uint256 equityDistributed
+        )
+    {
+        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
+
+        offtakerReceivedTotal = $.offtakerReceivedTotal;
+        seniorPrincipalRepaid = $.seniorPrincipalRepaid;
+        seniorInterestRepaid = $.seniorInterestRepaid;
+        equityDistributed = $.equityDistributed;
+    }
+
+    function _mintLoan(address to, string calldata metadataURI, uint64 initialMaturity, bytes32 location)
         internal
         returns (uint256 loanId)
     {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         loanId = $.nextLoanId;
 
-        $.immutableLoanData[loanId] = data;
+        $.metadataURI[loanId] = metadataURI;
         $.mutableLoanData[loanId].maturity = initialMaturity;
         $.mutableLoanData[loanId].location = location;
 
@@ -142,6 +172,28 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
         $.mutableLoanData[loanId].closureReason = reason;
 
         emit LoanClosed(loanId, reason);
+    }
+
+    function _recordPayment(
+        uint256 loanId,
+        uint256 offtakerAmount,
+        uint256 seniorPrincipal,
+        uint256 seniorInterest,
+        uint256 equityAmount
+    ) internal {
+        if (seniorPrincipal + seniorInterest + equityAmount > offtakerAmount) {
+            revert LoanRegistryWrongRepaymentData();
+        }
+
+        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
+        if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
+
+        $.offtakerReceivedTotal += offtakerAmount;
+        $.seniorPrincipalRepaid += seniorPrincipal;
+        $.seniorInterestRepaid += seniorInterest;
+        $.equityDistributed += equityAmount;
+
+        emit Repayment(loanId, offtakerAmount, seniorPrincipal, seniorInterest, equityAmount);
     }
 
     function _update(address to, uint256 tokenId, address auth) internal virtual override returns (address from) {
