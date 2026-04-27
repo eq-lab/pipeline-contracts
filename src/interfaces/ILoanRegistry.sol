@@ -15,15 +15,6 @@ interface ILoanRegistry {
         Default
     }
 
-    struct ImmutableLoanData {
-        bytes32 docHash; // IPFS/S3 hash of signed facility docs
-        uint256 principal; // original facility size, USDC decimals
-        address originator; // counterparty that took on the loan
-        address borrower; // end beneficiary (may equal originator)
-        bytes32 commodity; // short code (e.g. "COCOA-2026-07")
-        uint64 originatedAt; // block.timestamp at mint
-    }
-
     struct MutableLoanData {
         LoanStatus status;
         uint32 ccrBps; // collateral coverage ratio, basis points

@@ -21,12 +21,12 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
         __LoanRegistry_init(erc721Name, erc721Symbol);
     }
 
-    function mintLoan(address to, ImmutableLoanData calldata data, uint64 initialMaturity, bytes32 location)
+    function mintLoan(address to, string calldata metadataURI, uint64 initialMaturity, bytes32 location)
         external
         restricted
         returns (uint256 loanId)
     {
-        return _mintLoan(to, data, initialMaturity, location);
+        return _mintLoan(to, metadataURI, initialMaturity, location);
     }
 
     function updateStatus(uint256 loanId, LoanStatus status) external restricted {
@@ -39,6 +39,16 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
 
     function updateLocation(uint256 loanId, bytes32 newLocation) external restricted {
         _updateLocation(loanId, newLocation);
+    }
+
+    function recordPayment(
+        uint256 loanId,
+        uint256 offtakerAmount,
+        uint256 seniorPrincipal,
+        uint256 seniorInterest,
+        uint256 equityAmount
+    ) external restricted {
+        _recordPayment(loanId, offtakerAmount, seniorPrincipal, seniorInterest, equityAmount);
     }
 
     function setDefault(uint256 loanId) external restricted {
