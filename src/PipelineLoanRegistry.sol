@@ -8,6 +8,7 @@ import {
 
 import {LoanRegistryUpgradeable} from "./loanRegistry/LoanRegistryUpgradeable.sol";
 
+/// @custom:oz-upgrades-unsafe-allow constructor
 contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, LoanRegistryUpgradeable {
     constructor() {
         _disableInitializers();

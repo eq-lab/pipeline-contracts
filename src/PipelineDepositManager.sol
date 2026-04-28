@@ -21,8 +21,8 @@ contract PipelineDepositManager is UUPSUpgradeable, RateLimiterUpgradeable, Depo
         RateLimitConfig calldata rateLimitConfig
     ) external initializer {
         __AccessManaged_init(authority);
-        __DepositManager_init_unchained(custodian, depositedToken, mintedToken, minDeposit);
         __RateLimiter_init_unchained(rateLimitConfig);
+        __DepositManager_init_unchained(custodian, depositedToken, mintedToken, minDeposit);
     }
 
     function usdc() external view returns (address) {
