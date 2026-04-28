@@ -17,8 +17,8 @@ contract StakedPipelineUSD is UUPSUpgradeable, ERC4626Upgradeable, AccessManaged
     }
 
     function initialize(IERC20 asset, address authority) external initializer {
-        __ERC4626_init(asset);
         __ERC20_init("Staked Pipeline USD", "sPLUSD");
+        __ERC4626_init(asset);
         __AccessManaged_init(authority);
     }
 
