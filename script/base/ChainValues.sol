@@ -15,6 +15,7 @@ contract ChainValues {
 
     constructor() {
         _loadChainNames();
+        _loadHoodieValues();
         _loadAnvilValues();
     }
 
@@ -33,6 +34,27 @@ contract ChainValues {
         chainNames[SEPOLIA_CHAIN_ID] = "sepolia";
         chainNames[HOODIE_CHAIN_ID] = "hoodie";
         chainNames[ANVIL_CHAIN_ID] = "anvil";
+    }
+
+    function _loadHoodieValues() private {
+        // Default anvil signers
+        values[HOODIE_CHAIN_ID]["AccessManagerOwner"] =
+            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODIE_CHAIN_ID]["YieldMintAuthority"] =
+            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODIE_CHAIN_ID]["Custodian"] = bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+
+        values[HOODIE_CHAIN_ID]["USDC"] = bytes32(uint256(uint160(0xe198F1EEF83Dd613B874FC3c2D5BAf6C8a4A4597)));
+
+        // =========== DepositManagerConfig ===========
+        values[HOODIE_CHAIN_ID]["DepositManager__MinDeposit"] = bytes32(uint256(1_000_000_000));
+        values[HOODIE_CHAIN_ID]["DepositManager__RateLimit__TxLimit"] = bytes32(uint256(5_000_000_000_000));
+        values[HOODIE_CHAIN_ID]["DepositManager__RateLimit__WindowLimit"] = bytes32(uint256(10_000_000_000_000));
+        values[HOODIE_CHAIN_ID]["DepositManager__RateLimit__Window"] = bytes32(uint256(86400));
+        values[HOODIE_CHAIN_ID]["DepositManager__RateLimit__Shift"] = bytes32(uint256(0));
+
+        values[HOODIE_CHAIN_ID]["LoanRegistry__erc721Name"] = bytes32(bytes("LoanRegistryName"));
+        values[HOODIE_CHAIN_ID]["LoanRegistry__erc721Symbol"] = bytes32(bytes("LRS"));
     }
 
     function _loadAnvilValues() private {
