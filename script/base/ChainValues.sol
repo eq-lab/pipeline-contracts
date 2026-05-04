@@ -55,6 +55,26 @@ contract ChainValues {
 
         values[HOODIE_CHAIN_ID]["LoanRegistry__erc721Name"] = bytes32(bytes("LoanRegistryName"));
         values[HOODIE_CHAIN_ID]["LoanRegistry__erc721Symbol"] = bytes32(bytes("LRS"));
+
+        // =========== Roles ===========
+        values[HOODIE_CHAIN_ID]["DepositManagerAdmin"] =
+            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODIE_CHAIN_ID]["DepositManagerAdmin__Delay"] = bytes32(uint256(0));
+
+        values[HOODIE_CHAIN_ID]["EmergencyRole"] = bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODIE_CHAIN_ID]["EmergencyRole__Delay"] = bytes32(uint256(0));
+
+        values[HOODIE_CHAIN_ID]["LoanRegistryManager"] =
+            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODIE_CHAIN_ID]["LoanRegistryManager__Delay"] = bytes32(uint256(0));
+
+        values[HOODIE_CHAIN_ID]["WhitelistManager"] =
+            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODIE_CHAIN_ID]["WhitelistManager__Delay"] = bytes32(uint256(0));
+
+        values[HOODIE_CHAIN_ID]["YieldMinterManager"] =
+            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODIE_CHAIN_ID]["YieldMinterManager__Delay"] = bytes32(uint256(0));
     }
 
     function _loadAnvilValues() private {
