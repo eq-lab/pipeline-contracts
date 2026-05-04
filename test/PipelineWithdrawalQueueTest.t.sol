@@ -2,6 +2,7 @@
 pragma solidity ^0.8.34;
 
 import {WithdrawalQueueUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueUpgradeable.sol";
+import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
 
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 
@@ -157,6 +158,15 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         withdrawalQueue.fundWithdrawals(amount, queueManager);
 
         address wrongClaimant = makeAddr("wrongClaimant");
+        vm.prank(wrongClaimant);
+        vm.expectRevert(
+            abi.encodeWithSelector(WhitelistAccessedUpgradeable.WhitelistAccessedNoAccess.selector, wrongClaimant)
+        );
+        withdrawalQueue.claimWithdrawal(requestId);
+
+        vm.prank(whitelistAdmin);
+        whitelistRegistry.allowUser(wrongClaimant, type(uint256).max);
+
         vm.prank(wrongClaimant);
         vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueWrongClaimant.selector));
         withdrawalQueue.claimWithdrawal(requestId);

@@ -18,11 +18,12 @@ contract DeployWithdrawalQueue is BaseDeployer {
         address authority = readPlain("AccessManager");
         address usdc = address(uint160(uint256(valueOf("USDC", false))));
         (address pipelineUSD,) = readUpgradeable("PipelineUSD");
+        (address whitelistRegistry,) = readUpgradeable("WhitelistRegistry");
 
         Options memory opts;
         return Upgrades.deployUUPSProxy(
             "PipelineWithdrawalQueue.sol",
-            abi.encodeCall(PipelineWithdrawalQueue.initialize, (authority, pipelineUSD, usdc)),
+            abi.encodeCall(PipelineWithdrawalQueue.initialize, (authority, whitelistRegistry, pipelineUSD, usdc)),
             opts
         );
     }

@@ -140,7 +140,11 @@ contract PipelineTestSetUp is Test {
     function _setupWithdrawalQueue() private {
         PipelineWithdrawalQueue implementation = new PipelineWithdrawalQueue();
         bytes memory data = abi.encodeWithSelector(
-            PipelineWithdrawalQueue.initialize.selector, address(authority), address(plUsd), address(usdc)
+            PipelineWithdrawalQueue.initialize.selector,
+            address(authority),
+            address(whitelistRegistry),
+            address(plUsd),
+            address(usdc)
         );
         withdrawalQueue = PipelineWithdrawalQueue(address(new ERC1967Proxy(address(implementation), data)));
 

@@ -23,11 +23,11 @@ contract WhitelistAccessedUpgradeable is Initializable {
         }
     }
 
-    function __WhitelistAccess_init(address whitelist) internal onlyInitializing {
-        __WhitelistAccess_init_unchained(whitelist);
+    function __WhitelistAccessed_init(address whitelist) internal onlyInitializing {
+        __WhitelistAccessed_init_unchained(whitelist);
     }
 
-    function __WhitelistAccess_init_unchained(address whitelist) internal onlyInitializing {
+    function __WhitelistAccessed_init_unchained(address whitelist) internal onlyInitializing {
         WhitelistAccessedStorage storage $ = _getWhitelistAccessedStorage();
         $.whitelist = IWhitelist(whitelist);
     }
