@@ -37,7 +37,6 @@ contract ChainValues {
     }
 
     function _loadHoodieValues() private {
-        // Default anvil signers
         values[HOODIE_CHAIN_ID]["AccessManagerOwner"] =
             bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
         values[HOODIE_CHAIN_ID]["YieldMintAuthority"] =
@@ -55,6 +54,9 @@ contract ChainValues {
 
         values[HOODIE_CHAIN_ID]["LoanRegistry__erc721Name"] = bytes32(bytes("LoanRegistryName"));
         values[HOODIE_CHAIN_ID]["LoanRegistry__erc721Symbol"] = bytes32(bytes("LRS"));
+
+        values[HOODIE_CHAIN_ID]["WithdrawalQueue__TokenHolderMCP"] =
+            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
 
         // =========== Roles ===========
         values[HOODIE_CHAIN_ID]["DepositManagerAdmin"] =

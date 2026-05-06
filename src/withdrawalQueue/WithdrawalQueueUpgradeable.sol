@@ -13,8 +13,6 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
     struct WithdrawalQueueMetadata {
         // cumulative total of all withdrawal requests included the ones that have already been claimed
         uint256 queued;
-        // cumulative total of all the requests that can be claimed including the ones that have already been claimed
-        uint256 claimable;
         // total of all the requests that have been claimed
         uint256 claimed;
         // index of the next withdrawal request starting at 0
@@ -31,9 +29,11 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
 
     event WithdrawalRequested(address indexed withdrawer, uint256 indexed requestId, uint256 amount, uint256 queued);
     event WithdrawalClaimed(address indexed withdrawer, uint256 indexed requestId, uint256 amount);
-    event ClaimableIncreased(uint256 delta, uint256 newClaimable);
+    event IntoTokenHolderSet(address indexed intoTokenHolder);
 
+    error WithdrawalQueueZeroAddress();
     error WithdrawalQueueZeroAmount();
+    error WithdrawalQueueSameValue();
     error WithdrawalQueueAlreadyClaimed();
     error WithdrawalQueueTooEarly();
     error WithdrawalQueueWrongClaimant();
@@ -43,6 +43,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         WithdrawalQueueMetadata queueMetadata;
         IERC20Managed fromToken;
         IERC20 intoToken;
+        address intoTokenHolder;
         mapping(uint256 requestId => WithdrawalRequest) withdrawalRequests;
     }
 
@@ -56,14 +57,22 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         }
     }
 
-    function __WithdrawalQueue_init(address _fromToken, address _intoToken) internal onlyInitializing {
-        __WithdrawalQueue_init_unchained(_fromToken, _intoToken);
+    function __WithdrawalQueue_init(address _fromToken, address _intoToken, address _intoTokenHolder)
+        internal
+        onlyInitializing
+    {
+        __WithdrawalQueue_init_unchained(_fromToken, _intoToken, _intoTokenHolder);
     }
 
-    function __WithdrawalQueue_init_unchained(address _fromToken, address _intoToken) internal onlyInitializing {
+    function __WithdrawalQueue_init_unchained(address _fromToken, address _intoToken, address _intoTokenHolder)
+        internal
+        onlyInitializing
+    {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
         $.fromToken = IERC20Managed(_fromToken);
         $.intoToken = IERC20(_intoToken);
+
+        _setIntoTokenHolder(_intoTokenHolder);
     }
 
     function requestWithdrawal(uint256 amount) external virtual returns (uint256 requestId, uint256 queued) {
@@ -92,7 +101,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         return _claimWithdrawal(requestId);
     }
 
-    function fundWithdrawals(uint256 amount, address source) external virtual returns (uint256 claimable);
+    function changeIntoTokenHolder(address newIntoTokenHolder) external virtual;
 
     function withdrawalRequests(uint256 requestId) external view returns (WithdrawalRequest memory) {
         return _getWithdrawalQueueStorage().withdrawalRequests[requestId];
@@ -100,6 +109,21 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
 
     function queueMetadata() external view returns (WithdrawalQueueMetadata memory) {
         return _getWithdrawalQueueStorage().queueMetadata;
+    }
+
+    function claimable() public view returns (uint256) {
+        WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
+
+        IERC20 _intoToken = $.intoToken;
+        address _intoTokenHolder = $.intoTokenHolder;
+        return $.queueMetadata.claimed + _intoToken.balanceOf(_intoTokenHolder);
+    }
+
+    function isClaimable(uint256 requestId) external view returns (bool) {
+        WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
+        WithdrawalRequest storage request = $.withdrawalRequests[requestId];
+
+        return !request.claimed && request.queued <= claimable();
     }
 
     function fromToken() external view returns (address) {
@@ -110,33 +134,42 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         return address(_getWithdrawalQueueStorage().intoToken);
     }
 
+    function intoTokenHolder() external view returns (address) {
+        return address(_getWithdrawalQueueStorage().intoTokenHolder);
+    }
+
     function _claimWithdrawal(uint256 requestId) internal virtual returns (uint256 amount) {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
         WithdrawalRequest storage request = $.withdrawalRequests[requestId];
 
         if (request.withdrawer != msg.sender) revert WithdrawalQueueWrongClaimant();
         if (request.claimed) revert WithdrawalQueueAlreadyClaimed();
-        if (request.queued > $.queueMetadata.claimable) revert WithdrawalQueueTooEarly();
+
+        IERC20 _intoToken = $.intoToken;
+        address _intoTokenHolder = $.intoTokenHolder;
+
+        uint256 _claimable = $.queueMetadata.claimed + _intoToken.balanceOf(_intoTokenHolder);
+        if (request.queued > _claimable) revert WithdrawalQueueTooEarly();
 
         amount = request.amount;
         request.claimed = true;
         $.queueMetadata.claimed += amount;
 
-        $.intoToken.safeTransfer(msg.sender, amount);
+        _intoToken.safeTransferFrom(_intoTokenHolder, msg.sender, amount);
         $.fromToken.burn(amount);
 
         emit WithdrawalClaimed(msg.sender, requestId, amount);
     }
 
-    function _fundWithdrawals(uint256 amount, address source) internal virtual returns (uint256 claimable) {
-        if (amount == 0) revert WithdrawalQueueZeroAmount();
-        WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
+    function _changeIntoTokenHolder(address newIntoTokenHolder) internal {
+        if (_getWithdrawalQueueStorage().intoTokenHolder == newIntoTokenHolder) revert WithdrawalQueueSameValue();
+        _setIntoTokenHolder(newIntoTokenHolder);
+    }
 
-        claimable = $.queueMetadata.claimable + amount;
-        $.queueMetadata.claimable = claimable;
+    function _setIntoTokenHolder(address newIntoTokenHolder) private {
+        if (newIntoTokenHolder == address(0)) revert WithdrawalQueueZeroAddress();
+        _getWithdrawalQueueStorage().intoTokenHolder = newIntoTokenHolder;
 
-        $.intoToken.safeTransferFrom(source, address(this), amount);
-
-        emit ClaimableIncreased(amount, claimable);
+        emit IntoTokenHolderSet(newIntoTokenHolder);
     }
 }

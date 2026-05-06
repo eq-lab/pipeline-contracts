@@ -46,6 +46,7 @@ contract PipelineTestSetUp is Test {
     address public queueManager = makeAddr("queueManager");
     address public loanRegistryManager = makeAddr("loanRegistryManager");
     address public custodian = makeAddr("custodian");
+    address public tokenHolder = makeAddr("tokenHolder");
 
     uint256 minDeposit = 1_000_000_000;
     RateLimiterUpgradeable.RateLimitConfig public rateLimitConfigDefault = RateLimiterUpgradeable.RateLimitConfig({
@@ -144,7 +145,8 @@ contract PipelineTestSetUp is Test {
             address(authority),
             address(whitelistRegistry),
             address(plUsd),
-            address(usdc)
+            address(usdc),
+            tokenHolder
         );
         withdrawalQueue = PipelineWithdrawalQueue(address(new ERC1967Proxy(address(implementation), data)));
 
@@ -278,7 +280,7 @@ contract PipelineTestSetUp is Test {
         authority.grantRole(roleId, queueManager, 0);
 
         bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = WithdrawalQueueUpgradeable.fundWithdrawals.selector;
+        selectors[0] = WithdrawalQueueUpgradeable.changeIntoTokenHolder.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(withdrawalQueue), selectors, roleId);
