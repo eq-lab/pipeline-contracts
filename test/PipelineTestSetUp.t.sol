@@ -19,6 +19,7 @@ import {WhitelistAccessUpgradeable} from "../src/whitelist/WhitelistAccessUpgrad
 import {DepositManagerUpgradeable} from "../src/depositManager/DepositManagerUpgradeable.sol";
 import {RateLimiterUpgradeable} from "../src/depositManager/RateLimiterUpgradeable.sol";
 import {WithdrawalQueueUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueUpgradeable.sol";
+import {WithdrawalQueueShutdownUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueShutdownUpgradeable.sol";
 
 import {USDCMock} from "./mocks/USDCMock.t.sol";
 
@@ -279,8 +280,9 @@ contract PipelineTestSetUp is Test {
         vm.prank(admin);
         authority.grantRole(roleId, queueManager, 0);
 
-        bytes4[] memory selectors = new bytes4[](1);
+        bytes4[] memory selectors = new bytes4[](2);
         selectors[0] = WithdrawalQueueUpgradeable.changeIntoTokenHolder.selector;
+        selectors[1] = WithdrawalQueueShutdownUpgradeable.setShutdownRate.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(withdrawalQueue), selectors, roleId);

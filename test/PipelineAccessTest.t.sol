@@ -127,6 +127,10 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         withdrawalQueue.changeIntoTokenHolder(newIntoTokenHolder);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        withdrawalQueue.setShutdownRate(1);
     }
 
     function testFuzz_loanRegistryAccess(address caller) public {

@@ -2,20 +2,12 @@
 pragma solidity =0.8.34;
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {
-    AccessManagedUpgradeable
-} from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
 
 import {WhitelistAccessedUpgradeable} from "./whitelist/WhitelistAccessedUpgradeable.sol";
-import {WithdrawalQueueUpgradeable} from "./withdrawalQueue/WithdrawalQueueUpgradeable.sol";
+import {WithdrawalQueueShutdownUpgradeable} from "./withdrawalQueue/WithdrawalQueueShutdownUpgradeable.sol";
 
 /// @custom:oz-upgrades-unsafe-allow constructor
-contract PipelineWithdrawalQueue is
-    UUPSUpgradeable,
-    AccessManagedUpgradeable,
-    WithdrawalQueueUpgradeable,
-    WhitelistAccessedUpgradeable
-{
+contract PipelineWithdrawalQueue is UUPSUpgradeable, WithdrawalQueueShutdownUpgradeable, WhitelistAccessedUpgradeable {
     constructor() {
         _disableInitializers();
     }
@@ -28,7 +20,7 @@ contract PipelineWithdrawalQueue is
         address intoTokenHolder
     ) external initializer {
         __AccessManaged_init(authority);
-        __WithdrawalQueue_init(fromToken, intoToken, intoTokenHolder);
+        __WithdrawalQueueShutdown_init(fromToken, intoToken, intoTokenHolder);
         __WhitelistAccessed_init(whitelistRegistry);
     }
 
