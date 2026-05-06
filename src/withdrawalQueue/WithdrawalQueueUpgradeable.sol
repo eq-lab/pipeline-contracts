@@ -41,6 +41,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
     /// @custom:storage-location erc7201:pipeline.storage.WithdrawalQueue
     struct WithdrawalQueueStorage {
         WithdrawalQueueMetadata queueMetadata;
+        uint256 rate;
         IERC20Managed fromToken;
         IERC20 intoToken;
         address intoTokenHolder;
@@ -138,6 +139,10 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         return address(_getWithdrawalQueueStorage().intoTokenHolder);
     }
 
+    function convert(uint256 fromTokenAmount) public view virtual returns (uint256 intoTokenAmount) {
+        return fromTokenAmount;
+    }
+
     function _claimWithdrawal(uint256 requestId) internal virtual returns (uint256 amount) {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
         WithdrawalRequest storage request = $.withdrawalRequests[requestId];
@@ -151,7 +156,7 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         uint256 _claimable = $.queueMetadata.claimed + _intoToken.balanceOf(_intoTokenHolder);
         if (request.queued > _claimable) revert WithdrawalQueueTooEarly();
 
-        amount = request.amount;
+        amount = convert(request.amount);
         request.claimed = true;
         $.queueMetadata.claimed += amount;
 

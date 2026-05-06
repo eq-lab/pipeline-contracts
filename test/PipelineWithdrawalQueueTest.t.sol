@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.34;
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+
 import {WithdrawalQueueUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueUpgradeable.sol";
+import {WithdrawalQueueShutdownUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueShutdownUpgradeable.sol";
 import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
 
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
@@ -30,6 +33,9 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         assertEq(address(withdrawalQueue.intoToken()), address(usdc));
         assertEq(withdrawalQueue.intoTokenHolder(), tokenHolder);
         assertEq(withdrawalQueue.authority(), address(authority));
+
+        uint256 conversionAmount = 1e18;
+        assertEq(withdrawalQueue.convert(conversionAmount), conversionAmount);
     }
 
     function testFuzz_requestWithdrawal(uint256 withdrawalAmount) public {
@@ -130,7 +136,20 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         assertEq(withdrawalQueue.intoTokenHolder(), newTokenHolder);
     }
 
-    function test_reverts() public {
+    function test_setShutdown(uint256 shutdownRate, uint256 convertAmount) public {
+        uint256 one = withdrawalQueue.RATE_ONE();
+        vm.assume(shutdownRate < one);
+
+        vm.prank(queueManager);
+        withdrawalQueue.setShutdownRate(shutdownRate);
+
+        assertEq(withdrawalQueue.convert(convertAmount), Math.mulDiv(convertAmount, shutdownRate, one));
+    }
+
+    function test_reverts(uint256 shutdownRate) public {
+        uint256 one = withdrawalQueue.RATE_ONE();
+        vm.assume(shutdownRate >= one);
+
         vm.prank(user);
         vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueZeroAmount.selector));
         withdrawalQueue.requestWithdrawal(0);
@@ -177,5 +196,20 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         vm.prank(user);
         vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueAlreadyClaimed.selector));
         withdrawalQueue.claimWithdrawal(requestId);
+
+        vm.prank(queueManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(WithdrawalQueueShutdownUpgradeable.WithdrawalQueueShutdownInvalidRate.selector)
+        );
+        withdrawalQueue.setShutdownRate(shutdownRate);
+
+        vm.prank(queueManager);
+        withdrawalQueue.setShutdownRate(one / 2);
+
+        vm.prank(queueManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(WithdrawalQueueShutdownUpgradeable.WithdrawalQueueShutdownAlreadyInShutdown.selector)
+        );
+        withdrawalQueue.setShutdownRate(one / 2);
     }
 }
