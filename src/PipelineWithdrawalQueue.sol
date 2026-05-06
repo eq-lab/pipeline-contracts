@@ -20,12 +20,15 @@ contract PipelineWithdrawalQueue is
         _disableInitializers();
     }
 
-    function initialize(address authority, address whitelistRegistry, address fromToken, address intoToken)
-        external
-        initializer
-    {
+    function initialize(
+        address authority,
+        address whitelistRegistry,
+        address fromToken,
+        address intoToken,
+        address intoTokenHolder
+    ) external initializer {
         __AccessManaged_init(authority);
-        __WithdrawalQueue_init(fromToken, intoToken);
+        __WithdrawalQueue_init(fromToken, intoToken, intoTokenHolder);
         __WhitelistAccessed_init(whitelistRegistry);
     }
 
@@ -39,14 +42,8 @@ contract PipelineWithdrawalQueue is
         return _claimWithdrawal(requestId);
     }
 
-    function fundWithdrawals(uint256 amount, address source)
-        external
-        virtual
-        override
-        restricted
-        returns (uint256 claimable)
-    {
-        return super._fundWithdrawals(amount, source);
+    function changeIntoTokenHolder(address newIntoTokenHolder) external virtual override restricted {
+        _changeIntoTokenHolder(newIntoTokenHolder);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override restricted {}

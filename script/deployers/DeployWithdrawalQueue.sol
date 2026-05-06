@@ -16,14 +16,18 @@ contract DeployWithdrawalQueue is BaseDeployer {
 
     function _deployUpgradeable() internal override returns (address) {
         address authority = readPlain("AccessManager");
-        address usdc = address(uint160(uint256(valueOf("USDC", false))));
         (address pipelineUSD,) = readUpgradeable("PipelineUSD");
         (address whitelistRegistry,) = readUpgradeable("WhitelistRegistry");
+
+        address usdc = address(uint160(uint256(valueOf("USDC", false))));
+        address tokenHolderMCP = address(uint160(uint256(valueOf("WithdrawalQueue__TokenHolderMCP", false))));
 
         Options memory opts;
         return Upgrades.deployUUPSProxy(
             "PipelineWithdrawalQueue.sol",
-            abi.encodeCall(PipelineWithdrawalQueue.initialize, (authority, whitelistRegistry, pipelineUSD, usdc)),
+            abi.encodeCall(
+                PipelineWithdrawalQueue.initialize, (authority, whitelistRegistry, pipelineUSD, usdc, tokenHolderMCP)
+            ),
             opts
         );
     }
