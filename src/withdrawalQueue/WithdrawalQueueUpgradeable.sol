@@ -156,12 +156,13 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         uint256 _claimable = $.queueMetadata.claimed + _intoToken.balanceOf(_intoTokenHolder);
         if (request.queued > _claimable) revert WithdrawalQueueTooEarly();
 
-        amount = convert(request.amount);
+        uint256 requestAmount = request.amount;
+        amount = convert(requestAmount);
         request.claimed = true;
-        $.queueMetadata.claimed += amount;
+        $.queueMetadata.claimed += requestAmount;
 
         _intoToken.safeTransferFrom(_intoTokenHolder, msg.sender, amount);
-        $.fromToken.burn(amount);
+        $.fromToken.burn(requestAmount);
 
         emit WithdrawalClaimed(msg.sender, requestId, amount);
     }
