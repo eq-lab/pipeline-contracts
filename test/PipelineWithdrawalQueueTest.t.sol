@@ -34,7 +34,8 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         assertEq(withdrawalQueue.authority(), address(authority));
 
         uint256 conversionAmount = 1e18;
-        assertEq(withdrawalQueue.convert(conversionAmount), conversionAmount);
+        assertEq(withdrawalQueue.convertInto(conversionAmount), conversionAmount);
+        assertEq(withdrawalQueue.convertFrom(conversionAmount), conversionAmount);
     }
 
     function testFuzz_requestWithdrawal(uint256 withdrawalAmount) public {
@@ -109,12 +110,13 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
 
     function testFuzz_setShutdown(uint256 shutdownRate, uint256 convertAmount) public {
         uint256 one = withdrawalQueue.RATE_ONE();
-        vm.assume(shutdownRate < one);
+        vm.assume(convertAmount < type(uint128).max && shutdownRate < one && shutdownRate != 0);
 
         vm.prank(queueManager);
         withdrawalQueue.setShutdownRate(shutdownRate);
 
-        assertEq(withdrawalQueue.convert(convertAmount), Math.mulDiv(convertAmount, shutdownRate, one));
+        assertEq(withdrawalQueue.convertInto(convertAmount), Math.mulDiv(convertAmount, shutdownRate, one));
+        assertEq(withdrawalQueue.convertFrom(convertAmount), Math.mulDiv(convertAmount, one, shutdownRate));
     }
 
     function testFuzz_shutdownClaim(uint256 withdrawalAmount) public {
@@ -219,17 +221,17 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
 
         assert(!withdrawalQueue.isClaimable(requestId));
 
-        assertEq(withdrawalQueue.convert(withdrawalAmount), claimedAmount, "wtf");
+        assertEq(withdrawalQueue.convertInto(withdrawalAmount), claimedAmount);
 
-        assertEq(usdc.balanceOf(sender), senderBalanceBefore + claimedAmount, "wtf1");
-        assertEq(usdc.balanceOf(address(tokenHolder)), tokenHolderBalanceBefore - claimedAmount, "wtf2");
+        assertEq(usdc.balanceOf(sender), senderBalanceBefore + claimedAmount);
+        assertEq(usdc.balanceOf(address(tokenHolder)), tokenHolderBalanceBefore - claimedAmount);
 
-        assertEq(plUsd.balanceOf(sender), plSenderBalanceBefore, "wtf3");
-        assertEq(plUsd.balanceOf(address(withdrawalQueue)), plQueueBalanceBefore - withdrawalAmount, "wtf4");
+        assertEq(plUsd.balanceOf(sender), plSenderBalanceBefore);
+        assertEq(plUsd.balanceOf(address(withdrawalQueue)), plQueueBalanceBefore - withdrawalAmount);
 
         WithdrawalQueueUpgradeable.WithdrawalQueueMetadata memory metadata = withdrawalQueue.queueMetadata();
-        assertEq(metadata.nextWithdrawalIndex, metadataBefore.nextWithdrawalIndex, "wtf5");
-        assertEq(metadata.queued, metadataBefore.queued, "wtf6");
-        assertEq(metadata.claimed, metadataBefore.claimed + withdrawalAmount, "wtf7");
+        assertEq(metadata.nextWithdrawalIndex, metadataBefore.nextWithdrawalIndex);
+        assertEq(metadata.queued, metadataBefore.queued);
+        assertEq(metadata.claimed, metadataBefore.claimed + withdrawalAmount);
     }
 }
