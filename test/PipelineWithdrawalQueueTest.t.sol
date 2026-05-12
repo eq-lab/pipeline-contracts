@@ -199,6 +199,12 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         withdrawalQueue.setShutdownRate(shutdownRate);
 
         vm.prank(queueManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(WithdrawalQueueShutdownUpgradeable.WithdrawalQueueShutdownInvalidRate.selector)
+        );
+        withdrawalQueue.setShutdownRate(0);
+
+        vm.prank(queueManager);
         withdrawalQueue.setShutdownRate(one / 2);
 
         vm.prank(queueManager);

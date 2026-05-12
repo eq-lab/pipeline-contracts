@@ -46,7 +46,7 @@ abstract contract WithdrawalQueueShutdownUpgradeable is AccessManagedUpgradeable
     }
 
     function setShutdownRate(uint256 shutdownRate) external restricted {
-        if (shutdownRate >= RATE_ONE) revert WithdrawalQueueShutdownInvalidRate();
+        if (shutdownRate >= RATE_ONE || shutdownRate == 0) revert WithdrawalQueueShutdownInvalidRate();
 
         WithdrawalQueueShutdownStorage storage $ = _getWithdrawalQueueShutdownStorage();
         if ($.rate != RATE_ONE) revert WithdrawalQueueShutdownAlreadyInShutdown();
