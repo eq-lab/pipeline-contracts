@@ -57,6 +57,8 @@ contract ChainValues {
 
         values[HOODIE_CHAIN_ID]["WithdrawalQueue__TokenHolderMCP"] =
             bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODIE_CHAIN_ID]["WithdrawalQueue__Verifier"] =
+            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
 
         // =========== Roles ===========
         values[HOODIE_CHAIN_ID]["DepositManagerAdmin"] =

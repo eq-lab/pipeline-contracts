@@ -20,13 +20,15 @@ contract DeployWithdrawalQueue is BaseDeployer {
         (address whitelistRegistry,) = readUpgradeable("WhitelistRegistry");
 
         address usdc = address(uint160(uint256(valueOf("USDC", false))));
+        address withdrawalVerifier = address(uint160(uint256(valueOf("WithdrawalQueue__Verifier", false))));
         address tokenHolderMCP = address(uint160(uint256(valueOf("WithdrawalQueue__TokenHolderMCP", false))));
 
         Options memory opts;
         return Upgrades.deployUUPSProxy(
             "PipelineWithdrawalQueue.sol",
             abi.encodeCall(
-                PipelineWithdrawalQueue.initialize, (authority, whitelistRegistry, pipelineUSD, usdc, tokenHolderMCP)
+                PipelineWithdrawalQueue.initialize,
+                (authority, whitelistRegistry, withdrawalVerifier, pipelineUSD, usdc, tokenHolderMCP)
             ),
             opts
         );

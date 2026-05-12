@@ -35,6 +35,7 @@ contract PipelineTestSetUp is Test {
     USDCMock public usdc = new USDCMock();
 
     uint256 yieldMinterAuthorityPrivateKey = uint256(bytes32("yieldMinterAuthority"));
+    uint256 withdrawalVerifierPrivateKey = uint256(bytes32("withdrawalVerifier"));
 
     address public admin = makeAddr("admin");
     address public upgrader = makeAddr("upgrader");
@@ -44,6 +45,7 @@ contract PipelineTestSetUp is Test {
     address public yieldMinterManager = makeAddr("yieldMinterManager");
     address public depositManagerAdmin = makeAddr("depositManagerAdmin");
     address public queueManager = makeAddr("queueManager");
+    address public withdrawalVerifier = vm.addr(withdrawalVerifierPrivateKey);
     address public loanRegistryManager = makeAddr("loanRegistryManager");
     address public custodian = makeAddr("custodian");
     address public tokenHolder = makeAddr("tokenHolder");
@@ -143,6 +145,7 @@ contract PipelineTestSetUp is Test {
             PipelineWithdrawalQueue.initialize.selector,
             address(authority),
             address(whitelistRegistry),
+            withdrawalVerifier,
             address(plUsd),
             address(usdc),
             tokenHolder
