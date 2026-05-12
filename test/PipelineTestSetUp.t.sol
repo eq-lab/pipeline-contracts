@@ -37,7 +37,6 @@ contract PipelineTestSetUp is Test {
     uint256 yieldMinterAuthorityPrivateKey = uint256(bytes32("yieldMinterAuthority"));
 
     address public admin = makeAddr("admin");
-    address public trustee = makeAddr("trustee");
     address public upgrader = makeAddr("upgrader");
     address public pauser = makeAddr("pauser");
     address public whitelistAdmin = makeAddr("whitelistAdmin");
@@ -62,7 +61,6 @@ contract PipelineTestSetUp is Test {
         _setUpYieldMinter();
         _setupLoanRegistry();
 
-        _setUpTrustee();
         _setUpYieldMinterManager();
         _setUpPauser();
         _setUpWhitelistAdmin();
@@ -172,19 +170,6 @@ contract PipelineTestSetUp is Test {
             PipelineLoanRegistry.initialize.selector, address(authority), "Loan registry name", "Loan registry symbol"
         );
         loanRegistry = PipelineLoanRegistry(address(new ERC1967Proxy(address(implementation), data)));
-    }
-
-    function _setUpTrustee() private {
-        uint64 roleId = uint64(bytes8(keccak256("MINTER")));
-
-        vm.prank(admin);
-        authority.grantRole(roleId, trustee, 0);
-
-        bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = PipelineUSD.mint.selector;
-
-        vm.prank(admin);
-        authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
     }
 
     function _setUpYieldMinterManager() private {

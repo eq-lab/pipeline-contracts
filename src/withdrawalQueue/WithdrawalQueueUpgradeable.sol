@@ -139,8 +139,12 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         return address(_getWithdrawalQueueStorage().intoTokenHolder);
     }
 
-    function convert(uint256 fromTokenAmount) public view virtual returns (uint256 intoTokenAmount) {
+    function convertInto(uint256 fromTokenAmount) public view virtual returns (uint256 intoTokenAmount) {
         return fromTokenAmount;
+    }
+
+    function convertFrom(uint256 intoTokenAmount) public view virtual returns (uint256 fromTokenAmount) {
+        return intoTokenAmount;
     }
 
     function _claimWithdrawal(uint256 requestId) internal virtual returns (uint256 amount) {
@@ -153,15 +157,16 @@ abstract contract WithdrawalQueueUpgradeable is Initializable {
         IERC20 _intoToken = $.intoToken;
         address _intoTokenHolder = $.intoTokenHolder;
 
-        uint256 _claimable = $.queueMetadata.claimed + _intoToken.balanceOf(_intoTokenHolder);
+        uint256 _claimable = $.queueMetadata.claimed + convertFrom(_intoToken.balanceOf(_intoTokenHolder));
         if (request.queued > _claimable) revert WithdrawalQueueTooEarly();
 
-        amount = convert(request.amount);
+        uint256 requestAmount = request.amount;
+        amount = convertInto(requestAmount);
         request.claimed = true;
-        $.queueMetadata.claimed += amount;
+        $.queueMetadata.claimed += requestAmount;
 
         _intoToken.safeTransferFrom(_intoTokenHolder, msg.sender, amount);
-        $.fromToken.burn(amount);
+        $.fromToken.burn(requestAmount);
 
         emit WithdrawalClaimed(msg.sender, requestId, amount);
     }

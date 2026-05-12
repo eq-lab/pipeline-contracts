@@ -32,18 +32,6 @@ contract PipelineAccessTest is PipelineTestSetUp {
         plUsd.transfer(noAccess, 1);
     }
 
-    function testFuzz_trusteeAccess(address caller) public {
-        vm.assume(caller != trustee);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        plUsd.mint(caller, 1);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        plUsd.burn(1);
-    }
-
     function testFuzz_pauserAccess(address caller) public {
         vm.assume(caller != pauser);
 

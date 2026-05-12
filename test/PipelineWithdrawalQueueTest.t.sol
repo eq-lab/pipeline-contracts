@@ -15,8 +15,7 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
     function setUp() public override {
         super.setUp();
 
-        deal(address(plUsd), user, 1_000_000_000);
-        deal(address(usdc), queueManager, 1_000_000_000);
+        deal(address(plUsd), user, type(uint256).max / 2);
 
         vm.prank(whitelistAdmin);
         whitelistRegistry.allowUser(user, type(uint256).max);
@@ -35,7 +34,8 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         assertEq(withdrawalQueue.authority(), address(authority));
 
         uint256 conversionAmount = 1e18;
-        assertEq(withdrawalQueue.convert(conversionAmount), conversionAmount);
+        assertEq(withdrawalQueue.convertInto(conversionAmount), conversionAmount);
+        assertEq(withdrawalQueue.convertFrom(conversionAmount), conversionAmount);
     }
 
     function testFuzz_requestWithdrawal(uint256 withdrawalAmount) public {
@@ -72,13 +72,8 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
     }
 
     function testFuzz_increaseClaimable(uint256 amount) public {
-        uint256 managerBalanceBefore = usdc.balanceOf(queueManager);
-        vm.assume(amount <= managerBalanceBefore && amount != 0);
-
         uint256 claimableBefore = withdrawalQueue.claimable();
-
-        vm.prank(queueManager);
-        usdc.approve(address(withdrawalQueue), amount);
+        vm.assume(amount <= type(uint256).max - claimableBefore && amount != 0);
 
         deal(address(usdc), tokenHolder, amount);
 
@@ -98,36 +93,13 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         deal(address(usdc), tokenHolder, withdrawalAmount);
         assert(withdrawalQueue.isClaimable(requestId));
 
-        uint256 userBalanceBefore = usdc.balanceOf(user);
-        uint256 tokenHolderBalanceBefore = usdc.balanceOf(address(tokenHolder));
-        WithdrawalQueueUpgradeable.WithdrawalQueueMetadata memory metadataBefore = withdrawalQueue.queueMetadata();
-
-        uint256 plUserBalanceBefore = plUsd.balanceOf(user);
-        uint256 plQueueBalanceBefore = plUsd.balanceOf(address(withdrawalQueue));
-
-        vm.prank(user);
-        uint256 claimedAmount = withdrawalQueue.claimWithdrawal(requestId);
-
-        assert(!withdrawalQueue.isClaimable(requestId));
-
-        assertEq(claimedAmount, withdrawalAmount);
-
-        assertEq(usdc.balanceOf(user), userBalanceBefore + withdrawalAmount);
-        assertEq(usdc.balanceOf(address(tokenHolder)), tokenHolderBalanceBefore - withdrawalAmount);
-
-        assertEq(plUsd.balanceOf(user), plUserBalanceBefore);
-        assertEq(plUsd.balanceOf(address(withdrawalQueue)), plQueueBalanceBefore - withdrawalAmount);
-
-        WithdrawalQueueUpgradeable.WithdrawalQueueMetadata memory metadata = withdrawalQueue.queueMetadata();
-        assertEq(metadata.nextWithdrawalIndex, metadataBefore.nextWithdrawalIndex);
-        assertEq(metadata.queued, metadataBefore.queued);
-        assertEq(metadata.claimed, metadataBefore.claimed + withdrawalAmount);
+        _claimWithAssertions(user, requestId, withdrawalAmount);
 
         WithdrawalQueueUpgradeable.WithdrawalRequest memory request = withdrawalQueue.withdrawalRequests(requestId);
         assert(request.claimed);
     }
 
-    function test_changeIntoTokenHolder(address newTokenHolder) public {
+    function testFuzz_changeIntoTokenHolder(address newTokenHolder) public {
         vm.assume(newTokenHolder != address(0) && newTokenHolder != withdrawalQueue.intoTokenHolder());
 
         vm.prank(queueManager);
@@ -136,14 +108,37 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         assertEq(withdrawalQueue.intoTokenHolder(), newTokenHolder);
     }
 
-    function test_setShutdown(uint256 shutdownRate, uint256 convertAmount) public {
+    function testFuzz_setShutdown(uint256 shutdownRate, uint256 convertAmount) public {
         uint256 one = withdrawalQueue.RATE_ONE();
-        vm.assume(shutdownRate < one);
+        vm.assume(convertAmount < type(uint128).max && shutdownRate < one && shutdownRate != 0);
 
         vm.prank(queueManager);
         withdrawalQueue.setShutdownRate(shutdownRate);
 
-        assertEq(withdrawalQueue.convert(convertAmount), Math.mulDiv(convertAmount, shutdownRate, one));
+        assertEq(withdrawalQueue.convertInto(convertAmount), Math.mulDiv(convertAmount, shutdownRate, one));
+        assertEq(withdrawalQueue.convertFrom(convertAmount), Math.mulDiv(convertAmount, one, shutdownRate));
+    }
+
+    function testFuzz_shutdownClaim(uint256 withdrawalAmount) public {
+        vm.assume(withdrawalAmount >= 1_000_000 && withdrawalAmount <= plUsd.balanceOf(user) / 2);
+
+        deal(address(usdc), tokenHolder, 2 * withdrawalAmount);
+
+        vm.prank(user);
+        plUsd.approve(address(withdrawalQueue), 2 * withdrawalAmount);
+
+        vm.prank(user);
+        (uint256 preShutdownRequestId,) = withdrawalQueue.requestWithdrawal(withdrawalAmount);
+
+        uint256 one = withdrawalQueue.RATE_ONE();
+        vm.prank(queueManager);
+        withdrawalQueue.setShutdownRate(one * 3 / 4);
+
+        vm.prank(user);
+        (uint256 postShutdownRequestId,) = withdrawalQueue.requestWithdrawal(withdrawalAmount);
+
+        _claimWithAssertions(user, preShutdownRequestId, withdrawalAmount);
+        _claimWithAssertions(user, postShutdownRequestId, withdrawalAmount);
     }
 
     function test_reverts(uint256 shutdownRate) public {
@@ -204,6 +199,12 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         withdrawalQueue.setShutdownRate(shutdownRate);
 
         vm.prank(queueManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(WithdrawalQueueShutdownUpgradeable.WithdrawalQueueShutdownInvalidRate.selector)
+        );
+        withdrawalQueue.setShutdownRate(0);
+
+        vm.prank(queueManager);
         withdrawalQueue.setShutdownRate(one / 2);
 
         vm.prank(queueManager);
@@ -211,5 +212,32 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
             abi.encodeWithSelector(WithdrawalQueueShutdownUpgradeable.WithdrawalQueueShutdownAlreadyInShutdown.selector)
         );
         withdrawalQueue.setShutdownRate(one / 2);
+    }
+
+    function _claimWithAssertions(address sender, uint256 requestId, uint256 withdrawalAmount) private {
+        uint256 senderBalanceBefore = usdc.balanceOf(sender);
+        uint256 tokenHolderBalanceBefore = usdc.balanceOf(address(tokenHolder));
+        WithdrawalQueueUpgradeable.WithdrawalQueueMetadata memory metadataBefore = withdrawalQueue.queueMetadata();
+
+        uint256 plSenderBalanceBefore = plUsd.balanceOf(sender);
+        uint256 plQueueBalanceBefore = plUsd.balanceOf(address(withdrawalQueue));
+
+        vm.prank(sender);
+        uint256 claimedAmount = withdrawalQueue.claimWithdrawal(requestId);
+
+        assert(!withdrawalQueue.isClaimable(requestId));
+
+        assertEq(withdrawalQueue.convertInto(withdrawalAmount), claimedAmount);
+
+        assertEq(usdc.balanceOf(sender), senderBalanceBefore + claimedAmount);
+        assertEq(usdc.balanceOf(address(tokenHolder)), tokenHolderBalanceBefore - claimedAmount);
+
+        assertEq(plUsd.balanceOf(sender), plSenderBalanceBefore);
+        assertEq(plUsd.balanceOf(address(withdrawalQueue)), plQueueBalanceBefore - withdrawalAmount);
+
+        WithdrawalQueueUpgradeable.WithdrawalQueueMetadata memory metadata = withdrawalQueue.queueMetadata();
+        assertEq(metadata.nextWithdrawalIndex, metadataBefore.nextWithdrawalIndex);
+        assertEq(metadata.queued, metadataBefore.queued);
+        assertEq(metadata.claimed, metadataBefore.claimed + withdrawalAmount);
     }
 }

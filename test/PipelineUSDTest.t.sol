@@ -22,7 +22,7 @@ contract PipelineUSDTest is PipelineTestSetUp {
         whitelistRegistry.allowSystemAddress(address(0));
 
         vm.prank(whitelistAdmin);
-        whitelistRegistry.allowSystemAddress(trustee);
+        whitelistRegistry.allowSystemAddress(address(yieldMinter));
 
         deal(address(plUsd), userOne, 1_000_000_000);
     }
@@ -36,7 +36,7 @@ contract PipelineUSDTest is PipelineTestSetUp {
         vm.prank(userOne);
         plUsd.transfer(userTwo, 1_000);
 
-        vm.prank(trustee);
+        vm.prank(address(yieldMinter));
         plUsd.mint(address(withdrawalQueue), 1_000);
 
         vm.prank(address(withdrawalQueue));
@@ -49,9 +49,9 @@ contract PipelineUSDTest is PipelineTestSetUp {
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
         plUsd.transfer(userTwo, 1_000);
 
-        vm.prank(trustee);
+        vm.prank(address(yieldMinter));
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
-        plUsd.mint(trustee, 1_000);
+        plUsd.mint(address(withdrawalQueue), 1_000);
 
         vm.prank(address(withdrawalQueue));
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
@@ -63,7 +63,7 @@ contract PipelineUSDTest is PipelineTestSetUp {
         vm.prank(userOne);
         plUsd.transfer(userTwo, 1_000);
 
-        vm.prank(trustee);
+        vm.prank(address(yieldMinter));
         plUsd.mint(address(withdrawalQueue), 1_000);
 
         vm.prank(address(withdrawalQueue));
