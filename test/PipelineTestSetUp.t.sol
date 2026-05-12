@@ -35,6 +35,7 @@ contract PipelineTestSetUp is Test {
     USDCMock public usdc = new USDCMock();
 
     uint256 yieldMinterAuthorityPrivateKey = uint256(bytes32("yieldMinterAuthority"));
+    uint256 depositVerifierPrivateKey = uint256(bytes32("depositVerifier"));
     uint256 withdrawalVerifierPrivateKey = uint256(bytes32("withdrawalVerifier"));
 
     address public admin = makeAddr("admin");
@@ -44,6 +45,7 @@ contract PipelineTestSetUp is Test {
     address public yieldMinterAuthority = vm.addr(yieldMinterAuthorityPrivateKey);
     address public yieldMinterManager = makeAddr("yieldMinterManager");
     address public depositManagerAdmin = makeAddr("depositManagerAdmin");
+    address public depositVerifier = vm.addr(depositVerifierPrivateKey);
     address public queueManager = makeAddr("queueManager");
     address public withdrawalVerifier = vm.addr(withdrawalVerifierPrivateKey);
     address public loanRegistryManager = makeAddr("loanRegistryManager");
@@ -119,6 +121,7 @@ contract PipelineTestSetUp is Test {
         bytes memory data = abi.encodeWithSelector(
             PipelineDepositManager.initialize.selector,
             authority,
+            depositVerifier,
             custodian,
             usdc,
             plUsd,

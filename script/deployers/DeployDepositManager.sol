@@ -17,6 +17,7 @@ contract DeployDepositManager is BaseDeployer {
 
     function _deployUpgradeable() internal override returns (address) {
         address authority = readPlain("AccessManager");
+        address verifier = address(uint160(uint256(valueOf("DepositManager__Verifier", false))));
         address custodian = address(uint160(uint256(valueOf("Custodian", false))));
         address usdc = address(uint160(uint256(valueOf("USDC", false))));
         (address pipelineUSD,) = readUpgradeable("PipelineUSD");
@@ -34,7 +35,8 @@ contract DeployDepositManager is BaseDeployer {
         return Upgrades.deployUUPSProxy(
             "PipelineDepositManager.sol",
             abi.encodeCall(
-                PipelineDepositManager.initialize, (authority, custodian, usdc, pipelineUSD, minDeposit, config)
+                PipelineDepositManager.initialize,
+                (authority, verifier, custodian, usdc, pipelineUSD, minDeposit, config)
             ),
             opts
         );

@@ -8,8 +8,9 @@ import {
 } from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
 
 import {IERC20Managed} from "../interfaces/IERC20Managed.sol";
+import {VerifiedRequestsQueueUpgradeable} from "../withdrawalQueue/VerifiedRequestsQueueUpgradeable.sol";
 
-contract DepositManagerUpgradeable is Initializable, AccessManagedUpgradeable {
+contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequestsQueueUpgradeable {
     using SafeERC20 for IERC20;
     using SafeERC20 for IERC20Managed;
 
@@ -42,12 +43,16 @@ contract DepositManagerUpgradeable is Initializable, AccessManagedUpgradeable {
 
     function __DepositManager_init(
         address authority,
+        string memory name,
+        string memory version,
+        address verifier,
         address _custodian,
         address _fromToken,
         address _intoToken,
         uint256 _minDeposit
     ) internal onlyInitializing {
         __AccessManaged_init(authority);
+        __VerifiedRequestsQueue_init(name, version, verifier);
         __DepositManager_init_unchained(_custodian, _fromToken, _intoToken, _minDeposit);
     }
 
@@ -64,8 +69,12 @@ contract DepositManagerUpgradeable is Initializable, AccessManagedUpgradeable {
         $.minDeposit = _minDeposit;
     }
 
-    function deposit(uint256 amount) external {
-        _deposit(amount);
+    function deposit(uint256 amount) external returns (uint256 requestId) {
+        return _deposit(amount);
+    }
+
+    function claim(uint256 requestId, bytes calldata verifierSignature) external returns (uint256 amount) {
+        return _claim(requestId, verifierSignature);
     }
 
     function setCustodian(address _custodian) external restricted {
@@ -96,14 +105,22 @@ contract DepositManagerUpgradeable is Initializable, AccessManagedUpgradeable {
         return _getDepositManagerStorage().custodian;
     }
 
-    function _deposit(uint256 amount) internal {
+    function _deposit(uint256 amount) internal returns (uint256 requestId) {
         _preDepositHook(amount);
+
+        requestId = _enqueueRequest(msg.sender, amount);
 
         DepositManagerStorage storage $ = _getDepositManagerStorage();
         $.fromToken.safeTransferFrom(msg.sender, $.custodian, amount);
-        $.intoToken.mint(msg.sender, amount);
 
         emit Deposit(msg.sender, amount);
+    }
+
+    function _claim(uint256 requestId, bytes calldata verifierSignature) internal returns (uint256 amount) {
+        amount = _claimRequest(requestId, verifierSignature);
+
+        DepositManagerStorage storage $ = _getDepositManagerStorage();
+        $.intoToken.mint(msg.sender, amount);
     }
 
     function _preDepositHook(uint256 amount) internal virtual {

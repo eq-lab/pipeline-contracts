@@ -51,6 +51,8 @@ contract ChainValues {
         values[HOODIE_CHAIN_ID]["DepositManager__RateLimit__WindowLimit"] = bytes32(uint256(10_000_000_000_000));
         values[HOODIE_CHAIN_ID]["DepositManager__RateLimit__Window"] = bytes32(uint256(86400));
         values[HOODIE_CHAIN_ID]["DepositManager__RateLimit__Shift"] = bytes32(uint256(0));
+        values[HOODIE_CHAIN_ID]["DepositManager__Verifier"] =
+            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
 
         values[HOODIE_CHAIN_ID]["LoanRegistry__erc721Name"] = bytes32(bytes("LoanRegistryName"));
         values[HOODIE_CHAIN_ID]["LoanRegistry__erc721Symbol"] = bytes32(bytes("LRS"));
