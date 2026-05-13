@@ -1,0 +1,32 @@
+{
+  "AccessManager": {
+    "address": "0x6eaF14B90D63E06AD9E800b969a6507cC894ADc3"
+  },
+  "WhitelistRegistry": {
+    "proxy": "0x2C80aacDDE77e66C0954be8640d00B07EC5E8943",
+    "implementation": "0x18b7Af8D78dd80387dF1735C3a2e3921f6901613"
+  },
+  "PipelineUSD": {
+    "proxy": "0x5fc5FD8411e2D29C7b11559b27FCF709e337BE1b",
+    "implementation": "0x7Be8a0E4957ff1D708DC9b774A1dC9391E39360a"
+  },
+  "StakedPipelineUSD": {
+    "proxy": "0x4C414d0948D8392b1E78e25cb54b4074616Af2B6",
+    "implementation": "0xfE472F217ff3D86248Ef5919d307Dc8e625AA664"
+  },
+  "PipelineYieldMinterV1": {
+    "address": "0x21590BAAe014251Ced4cBc8e435B8decc4f21663"
+  },
+  "PipelineDepositManager": {
+    "proxy": "0x4C5E17B695ce266f57BFAeb14BBe155C9C2D041a",
+    "implementation": "0x0800f2CFD537d699AF15255e5cFf24284A90e6D7"
+  },
+  "PipelineWithdrawalQueue": {
+    "proxy": "0xcb26E7DB64DDa53A76223bbA6Ed6F1fA81Eeb6bE",
+    "implementation": "0x83D3a059A923b57cc1a238Bd1E78aF69415df3f4"
+  },
+  "PipelineLoanRegistry": {
+    "proxy": "0x76A7DdeED7bb2aEFE1d200E0A5d1a1a32DFac6F9",
+    "implementation": "0x8AAEdFF9c6DF53D355178250d227d6dcdaccA642"
+  }
+}
