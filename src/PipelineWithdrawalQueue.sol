@@ -3,25 +3,22 @@ pragma solidity =0.8.34;
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import {WhitelistAccessedUpgradeable} from "./whitelist/WhitelistAccessedUpgradeable.sol";
 import {WithdrawalQueueShutdownUpgradeable} from "./withdrawalQueue/WithdrawalQueueShutdownUpgradeable.sol";
 
 /// @custom:oz-upgrades-unsafe-allow constructor
-contract PipelineWithdrawalQueue is UUPSUpgradeable, WhitelistAccessedUpgradeable, WithdrawalQueueShutdownUpgradeable {
+contract PipelineWithdrawalQueue is UUPSUpgradeable, WithdrawalQueueShutdownUpgradeable {
     constructor() {
         _disableInitializers();
     }
 
     function initialize(
         address authority,
-        address whitelistRegistry,
         address verifier,
         address fromToken,
         address intoToken,
         address intoTokenHolder
     ) external initializer {
         __AccessManaged_init(authority);
-        __WhitelistAccessed_init(whitelistRegistry);
         __WithdrawalQueueShutdown_init("PipelineWithdrawalQueue", "v1", verifier, fromToken, intoToken, intoTokenHolder);
     }
 
@@ -29,7 +26,6 @@ contract PipelineWithdrawalQueue is UUPSUpgradeable, WhitelistAccessedUpgradeabl
         external
         virtual
         override
-        onlyAllowed(msg.sender)
         returns (uint256 amount)
     {
         return _claimWithdrawal(requestId, verifierSignature);

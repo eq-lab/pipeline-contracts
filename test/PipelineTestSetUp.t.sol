@@ -148,7 +148,6 @@ contract PipelineTestSetUp is Test {
         bytes memory data = abi.encodeWithSelector(
             PipelineWithdrawalQueue.initialize.selector,
             address(authority),
-            address(whitelistRegistry),
             withdrawalVerifier,
             address(plUsd),
             address(usdc),
