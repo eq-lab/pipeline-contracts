@@ -14,7 +14,7 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
     using SafeERC20 for IERC20;
     using SafeERC20 for IERC20Managed;
 
-    event Deposit(address indexed user, uint256 amount);
+    event DepositRequested(uint256 indexed requestId, address indexed user, uint256 amount);
     event CustodianSet(address newCustodian);
     event MinDepositSet(uint256 newMinDeposit);
 
@@ -68,8 +68,8 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
         $.minDeposit = _minDeposit;
     }
 
-    function deposit(uint256 amount) external returns (uint256 requestId) {
-        return _deposit(amount);
+    function requestDeposit(uint256 amount) external returns (uint256 requestId) {
+        return _requestDeposit(amount);
     }
 
     function claim(uint256 requestId, bytes calldata verifierSignature) external returns (uint256 amount) {
@@ -108,7 +108,7 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
         return _getDepositManagerStorage().custodian;
     }
 
-    function _deposit(uint256 amount) internal returns (uint256 requestId) {
+    function _requestDeposit(uint256 amount) internal returns (uint256 requestId) {
         _preDepositHook(amount);
 
         requestId = _enqueueRequest(msg.sender, amount);
@@ -116,7 +116,7 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
         DepositManagerStorage storage $ = _getDepositManagerStorage();
         $.fromToken.safeTransferFrom(msg.sender, $.custodian, amount);
 
-        emit Deposit(msg.sender, amount);
+        emit DepositRequested(requestId, msg.sender, amount);
     }
 
     function _claim(uint256 requestId, bytes calldata verifierSignature) internal returns (uint256 amount) {
