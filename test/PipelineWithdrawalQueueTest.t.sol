@@ -18,7 +18,7 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         deal(address(plUsd), user, type(uint256).max / 2);
 
         vm.prank(whitelistAdmin);
-        whitelistRegistry.allowUser(user, type(uint256).max);
+        whitelistRegistry.allow(user);
 
         vm.prank(tokenHolder);
         usdc.approve(address(withdrawalQueue), type(uint256).max);

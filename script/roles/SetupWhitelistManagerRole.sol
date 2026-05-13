@@ -16,10 +16,9 @@ contract SetupWhitelistManagerRole is Script, Deployments {
 
         AccessManager accessManager = AccessManager(readPlain("AccessManager"));
 
-        bytes4[] memory selectors = new bytes4[](3);
-        selectors[0] = WhitelistAccessUpgradeable.allowSystemAddress.selector;
-        selectors[1] = WhitelistAccessUpgradeable.allowUser.selector;
-        selectors[2] = WhitelistAccessUpgradeable.disallow.selector;
+        bytes4[] memory selectors = new bytes4[](2);
+        selectors[0] = WhitelistAccessUpgradeable.allow.selector;
+        selectors[1] = WhitelistAccessUpgradeable.disallow.selector;
 
         (address whitelistRegistry,) = readUpgradeable("WhitelistRegistry");
         address roleHolder = address(uint160(uint256(valueOf("WhitelistManager", false))));

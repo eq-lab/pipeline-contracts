@@ -12,10 +12,10 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
         super.setUp();
 
         vm.prank(whitelistAdmin);
-        whitelistRegistry.allowSystemAddress(user);
+        whitelistRegistry.allow(user);
 
         vm.prank(whitelistAdmin);
-        whitelistRegistry.allowSystemAddress(address(sPlUsd));
+        whitelistRegistry.allow(address(sPlUsd));
 
         deal(address(plUsd), user, 1_000_000_000);
     }

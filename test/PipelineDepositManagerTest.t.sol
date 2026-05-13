@@ -16,7 +16,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         super.setUp();
 
         vm.prank(whitelistAdmin);
-        whitelistRegistry.allowSystemAddress(user);
+        whitelistRegistry.allow(user);
 
         deal(address(usdc), user, usdcAmount);
     }
