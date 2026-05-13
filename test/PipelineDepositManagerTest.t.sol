@@ -47,7 +47,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         usdc.approve(address(depositManager), amount);
 
         vm.prank(user);
-        uint256 requestId = depositManager.deposit(amount);
+        uint256 requestId = depositManager.requestDeposit(amount);
 
         assertEq(usdc.balanceOf(address(depositManager)), 0);
         assertEq(plUsd.balanceOf(address(depositManager)), 0);
@@ -73,7 +73,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         usdc.approve(address(depositManager), amount);
 
         vm.prank(user);
-        uint256 requestId = depositManager.deposit(amount);
+        uint256 requestId = depositManager.requestDeposit(amount);
 
         uint256 userUsdcBalanceBefore = usdc.balanceOf(user);
         uint256 userPlUsdBalanceBefore = plUsd.balanceOf(user);
@@ -111,7 +111,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
 
         for (uint256 i; i < loops;) {
             vm.prank(user);
-            depositManager.deposit(rateLimitConfig.txLimit);
+            depositManager.requestDeposit(rateLimitConfig.txLimit);
 
             assertEq(depositManager.lastMintTimestamp(), block.timestamp);
             assertEq(
@@ -125,7 +125,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
 
         vm.prank(user);
         vm.expectRevert(abi.encodeWithSelector(RateLimiterUpgradeable.RateLimiterExceedsWindowLimit.selector));
-        depositManager.deposit(rateLimitConfig.txLimit);
+        depositManager.requestDeposit(rateLimitConfig.txLimit);
 
         uint256 currentWindowIndex = (block.timestamp + rateLimitConfig.shift) / rateLimitConfig.window;
         uint256 nextWindowTimestamp = (currentWindowIndex + 1) * rateLimitConfig.window - rateLimitConfig.shift;
@@ -137,7 +137,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         assertEq(depositManager.windowCumulativeMint(), 0);
 
         vm.prank(user);
-        depositManager.deposit(rateLimitConfig.txLimit);
+        depositManager.requestDeposit(rateLimitConfig.txLimit);
     }
 
     function testFuzz_depositReverts(uint256 amount) public {
@@ -147,11 +147,11 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
 
         vm.prank(user);
         vm.expectRevert(abi.encodeWithSelector(RateLimiterUpgradeable.RateLimiterExceedsTxLimit.selector));
-        depositManager.deposit(rateLimitConfig.txLimit + amount);
+        depositManager.requestDeposit(rateLimitConfig.txLimit + amount);
 
         vm.prank(user);
         vm.expectRevert(abi.encodeWithSelector(DepositManagerUpgradeable.DepositManagerLessThanMinAmount.selector));
-        depositManager.deposit(amount);
+        depositManager.requestDeposit(amount);
 
         vm.prank(depositManagerAdmin);
         depositManager.setMinDeposit(0);
@@ -160,7 +160,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         vm.expectRevert(
             abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsQueueZeroAmount.selector)
         );
-        depositManager.deposit(0);
+        depositManager.requestDeposit(0);
     }
 
     function testFuzz_claimReverts(uint256 amount) public {
@@ -170,7 +170,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         usdc.approve(address(depositManager), amount);
 
         vm.prank(user);
-        uint256 requestId = depositManager.deposit(amount);
+        uint256 requestId = depositManager.requestDeposit(amount);
 
         bytes memory invalidSignature = _createSignature(requestId, user, amount, 1);
         assert(!depositManager.verifySignature(requestId, invalidSignature));
