@@ -18,7 +18,7 @@ abstract contract VerifiedRequestsQueueUpgradeable is EIP712Upgradeable {
     }
 
     bytes32 public constant VERIFIED_REQUESTS_TYPEHASH =
-        keccak256("VerifiedRequests(uint256 requestId, address user, uint256 amount)");
+        keccak256("VerifiedRequests(uint256 requestId,address user,uint256 amount)");
 
     event RequestEnqueued(uint256 indexed requestId, address indexed user, uint256 amount, uint88 timestamp);
     event RequestClaimed(uint256 indexed requestId, address indexed user, uint256 amount);
