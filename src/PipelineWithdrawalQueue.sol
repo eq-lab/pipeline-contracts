@@ -7,7 +7,7 @@ import {WhitelistAccessedUpgradeable} from "./whitelist/WhitelistAccessedUpgrade
 import {WithdrawalQueueShutdownUpgradeable} from "./withdrawalQueue/WithdrawalQueueShutdownUpgradeable.sol";
 
 /// @custom:oz-upgrades-unsafe-allow constructor
-contract PipelineWithdrawalQueue is UUPSUpgradeable, WithdrawalQueueShutdownUpgradeable, WhitelistAccessedUpgradeable {
+contract PipelineWithdrawalQueue is UUPSUpgradeable, WhitelistAccessedUpgradeable, WithdrawalQueueShutdownUpgradeable {
     constructor() {
         _disableInitializers();
     }
@@ -15,23 +15,24 @@ contract PipelineWithdrawalQueue is UUPSUpgradeable, WithdrawalQueueShutdownUpgr
     function initialize(
         address authority,
         address whitelistRegistry,
+        address verifier,
         address fromToken,
         address intoToken,
         address intoTokenHolder
     ) external initializer {
         __AccessManaged_init(authority);
-        __WithdrawalQueueShutdown_init(fromToken, intoToken, intoTokenHolder);
         __WhitelistAccessed_init(whitelistRegistry);
+        __WithdrawalQueueShutdown_init("PipelineWithdrawalQueue", "v1", verifier, fromToken, intoToken, intoTokenHolder);
     }
 
-    function claimWithdrawal(uint256 requestId)
+    function claimWithdrawal(uint256 requestId, bytes calldata verifierSignature)
         external
         virtual
         override
         onlyAllowed(msg.sender)
         returns (uint256 amount)
     {
-        return _claimWithdrawal(requestId);
+        return _claimWithdrawal(requestId, verifierSignature);
     }
 
     function changeIntoTokenHolder(address newIntoTokenHolder) external virtual override restricted {

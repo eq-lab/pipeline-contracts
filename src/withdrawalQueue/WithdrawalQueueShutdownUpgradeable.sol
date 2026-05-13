@@ -33,12 +33,16 @@ abstract contract WithdrawalQueueShutdownUpgradeable is AccessManagedUpgradeable
         }
     }
 
-    function __WithdrawalQueueShutdown_init(address _fromToken, address _intoToken, address _intoTokenHolder)
-        internal
-        onlyInitializing
-    {
+    function __WithdrawalQueueShutdown_init(
+        string memory name,
+        string memory version,
+        address verifier,
+        address _fromToken,
+        address _intoToken,
+        address _intoTokenHolder
+    ) internal onlyInitializing {
         __WithdrawalQueueShutdown_init_unchained();
-        __WithdrawalQueue_init(_fromToken, _intoToken, _intoTokenHolder);
+        __WithdrawalQueue_init(name, version, verifier, _fromToken, _intoToken, _intoTokenHolder);
     }
 
     function __WithdrawalQueueShutdown_init_unchained() internal onlyInitializing {
@@ -54,6 +58,10 @@ abstract contract WithdrawalQueueShutdownUpgradeable is AccessManagedUpgradeable
         $.rate = shutdownRate;
 
         emit Shutdown(shutdownRate);
+    }
+
+    function setVerifier(address verifier) external restricted {
+        _setVerifier(verifier);
     }
 
     function convertInto(uint256 fromTokenAmount) public view virtual override returns (uint256 intoTokenAmount) {
