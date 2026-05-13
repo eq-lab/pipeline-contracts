@@ -8,7 +8,7 @@ import {
 } from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
 
 import {IERC20Managed} from "../interfaces/IERC20Managed.sol";
-import {VerifiedRequestsQueueUpgradeable} from "../withdrawalQueue/VerifiedRequestsQueueUpgradeable.sol";
+import {VerifiedRequestsQueueUpgradeable} from "../requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
 
 contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequestsQueueUpgradeable {
     using SafeERC20 for IERC20;
@@ -18,7 +18,6 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
     event CustodianSet(address newCustodian);
     event MinDepositSet(uint256 newMinDeposit);
 
-    error DepositManagerZeroAmount();
     error DepositManagerLessThanMinAmount();
     error DepositManagerSameValue();
     error DepositManagerZeroAddress();
@@ -97,6 +96,10 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
         emit MinDepositSet(_minDeposit);
     }
 
+    function setVerifier(address verifier) external restricted {
+        _setVerifier(verifier);
+    }
+
     function minDeposit() external view returns (uint256) {
         return _getDepositManagerStorage().minDeposit;
     }
@@ -124,8 +127,6 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
     }
 
     function _preDepositHook(uint256 amount) internal virtual {
-        if (amount == 0) revert DepositManagerZeroAmount();
-
         DepositManagerStorage storage $ = _getDepositManagerStorage();
         if (amount < $.minDeposit) revert DepositManagerLessThanMinAmount();
     }

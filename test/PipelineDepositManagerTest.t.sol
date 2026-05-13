@@ -4,7 +4,7 @@ pragma solidity ^0.8.34;
 import {RateLimiterUpgradeable} from "../src/depositManager/RateLimiterUpgradeable.sol";
 import {DepositManagerUpgradeable} from "../src/depositManager/DepositManagerUpgradeable.sol";
 import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
-import {VerifiedRequestsQueueUpgradeable} from "../src/withdrawalQueue/VerifiedRequestsQueueUpgradeable.sol";
+import {VerifiedRequestsQueueUpgradeable} from "../src/requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
 
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 
@@ -84,6 +84,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         uint256 custodianUsdcBalanceBefore = usdc.balanceOf(custodian);
 
         bytes memory signature = _createSignature(requestId, user, amount, depositVerifierPrivateKey);
+        assert(depositManager.verifySignature(requestId, signature));
 
         vm.prank(user);
         uint256 mintAmount = depositManager.claim(requestId, signature);
@@ -153,12 +154,58 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         depositManager.deposit(rateLimitConfig.txLimit + amount);
 
         vm.prank(user);
-        vm.expectRevert(abi.encodeWithSelector(DepositManagerUpgradeable.DepositManagerZeroAmount.selector));
-        depositManager.deposit(0);
-
-        vm.prank(user);
         vm.expectRevert(abi.encodeWithSelector(DepositManagerUpgradeable.DepositManagerLessThanMinAmount.selector));
         depositManager.deposit(amount);
+
+        vm.prank(depositManagerAdmin);
+        depositManager.setMinDeposit(0);
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsQueueZeroAmount.selector)
+        );
+        depositManager.deposit(0);
+    }
+
+    function testFuzz_claimReverts(uint256 amount) public {
+        vm.assume(amount >= depositManager.minDeposit() && amount <= usdcAmount);
+
+        vm.prank(user);
+        usdc.approve(address(depositManager), amount);
+
+        vm.prank(user);
+        uint256 requestId = depositManager.deposit(amount);
+
+        bytes memory invalidSignature = _createSignature(requestId, user, amount, 1);
+        assert(!depositManager.verifySignature(requestId, invalidSignature));
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsInvalidRequestId.selector)
+        );
+        depositManager.claim(requestId + 1, invalidSignature);
+
+        address wrongClaimant = makeAddr("wrongClaimant");
+        vm.prank(wrongClaimant);
+        vm.expectRevert(abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsInvalidSender.selector));
+        depositManager.claim(requestId, invalidSignature);
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsInvalidSignature.selector)
+        );
+        depositManager.claim(requestId, invalidSignature);
+
+        bytes memory signature = _createSignature(requestId, user, amount, depositVerifierPrivateKey);
+
+        vm.prank(user);
+        depositManager.claim(requestId, signature);
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsQueueAlreadyClaimed.selector)
+        );
+        depositManager.claim(requestId, signature);
     }
 
     function test_setMinDeposit(uint256 newMinDeposit) public {
@@ -197,6 +244,27 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         vm.prank(depositManagerAdmin);
         vm.expectRevert(abi.encodeWithSelector(DepositManagerUpgradeable.DepositManagerZeroAddress.selector));
         depositManager.setCustodian(address(0));
+    }
+
+    function testFuzz_setVerifier(address newVerifier) public {
+        vm.assume(newVerifier != depositManager.verifier() && newVerifier != address(0));
+
+        vm.prank(depositManagerAdmin);
+        depositManager.setVerifier(newVerifier);
+
+        assertEq(depositManager.verifier(), newVerifier);
+    }
+
+    function test_setVerifierReverts() public {
+        address newVerifier = depositManager.verifier();
+
+        vm.prank(depositManagerAdmin);
+        vm.expectRevert(abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsSameValue.selector));
+        depositManager.setVerifier(newVerifier);
+
+        vm.prank(depositManagerAdmin);
+        vm.expectRevert(abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsZeroAddress.selector));
+        depositManager.setVerifier(address(0));
     }
 
     function test_increaseTxLimit(uint256 newTxLimit) public {

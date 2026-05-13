@@ -73,7 +73,7 @@ abstract contract VerifiedRequestsQueueUpgradeable is EIP712Upgradeable {
         return _getVerifiedRequestsQueueStorage().verifier;
     }
 
-    function requests(uint256 requestId) external view returns (Request memory) {
+    function requests(uint256 requestId) public view returns (Request memory) {
         return _getVerifiedRequestsQueueStorage().requests[requestId];
     }
 
@@ -122,7 +122,7 @@ abstract contract VerifiedRequestsQueueUpgradeable is EIP712Upgradeable {
         emit RequestClaimed(requestId, user, amount);
     }
 
-    function _setVerifier(address newVerifier) private {
+    function _setVerifier(address newVerifier) internal {
         if (newVerifier == address(0)) revert VerifiedRequestsZeroAddress();
 
         VerifiedRequestsQueueStorage storage $ = _getVerifiedRequestsQueueStorage();

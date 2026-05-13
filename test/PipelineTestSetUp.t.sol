@@ -20,6 +20,7 @@ import {DepositManagerUpgradeable} from "../src/depositManager/DepositManagerUpg
 import {RateLimiterUpgradeable} from "../src/depositManager/RateLimiterUpgradeable.sol";
 import {WithdrawalQueueUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueUpgradeable.sol";
 import {WithdrawalQueueShutdownUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueShutdownUpgradeable.sol";
+import {VerifiedRequestsQueueUpgradeable} from "../src/requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
 
 import {USDCMock} from "./mocks/USDCMock.t.sol";
 
@@ -253,13 +254,14 @@ contract PipelineTestSetUp is Test {
         vm.prank(admin);
         authority.grantRole(roleId, depositManagerAdmin, 0);
 
-        bytes4[] memory selectors = new bytes4[](6);
+        bytes4[] memory selectors = new bytes4[](7);
         selectors[0] = DepositManagerUpgradeable.setMinDeposit.selector;
         selectors[1] = DepositManagerUpgradeable.setCustodian.selector;
-        selectors[2] = RateLimiterUpgradeable.increaseTxLimit.selector;
-        selectors[3] = RateLimiterUpgradeable.decreaseTxLimit.selector;
-        selectors[4] = RateLimiterUpgradeable.increaseWindowLimit.selector;
-        selectors[5] = RateLimiterUpgradeable.decreaseWindowLimit.selector;
+        selectors[2] = DepositManagerUpgradeable.setVerifier.selector;
+        selectors[3] = RateLimiterUpgradeable.increaseTxLimit.selector;
+        selectors[4] = RateLimiterUpgradeable.decreaseTxLimit.selector;
+        selectors[5] = RateLimiterUpgradeable.increaseWindowLimit.selector;
+        selectors[6] = RateLimiterUpgradeable.decreaseWindowLimit.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(depositManager), selectors, roleId);
@@ -271,9 +273,10 @@ contract PipelineTestSetUp is Test {
         vm.prank(admin);
         authority.grantRole(roleId, queueManager, 0);
 
-        bytes4[] memory selectors = new bytes4[](2);
+        bytes4[] memory selectors = new bytes4[](3);
         selectors[0] = WithdrawalQueueUpgradeable.changeIntoTokenHolder.selector;
         selectors[1] = WithdrawalQueueShutdownUpgradeable.setShutdownRate.selector;
+        selectors[2] = WithdrawalQueueShutdownUpgradeable.setVerifier.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(withdrawalQueue), selectors, roleId);

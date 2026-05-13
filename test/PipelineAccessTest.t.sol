@@ -105,6 +105,10 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         depositManager.decreaseWindowLimit(1);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        depositManager.setVerifier(caller);
     }
 
     function testFuzz_queueManagerAccess(address caller) public {
@@ -119,6 +123,10 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         withdrawalQueue.setShutdownRate(1);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        withdrawalQueue.setVerifier(caller);
     }
 
     function testFuzz_loanRegistryAccess(address caller) public {

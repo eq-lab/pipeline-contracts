@@ -3,7 +3,7 @@ pragma solidity ^0.8.34;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import {VerifiedRequestsQueueUpgradeable} from "../src/withdrawalQueue/VerifiedRequestsQueueUpgradeable.sol";
+import {VerifiedRequestsQueueUpgradeable} from "../src/requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
 import {WithdrawalQueueUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueUpgradeable.sol";
 import {WithdrawalQueueShutdownUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueShutdownUpgradeable.sol";
 import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
@@ -236,7 +236,7 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         vm.prank(sender);
         uint256 claimedAmount = withdrawalQueue.claimWithdrawal(requestId, signature);
 
-        // assert(!withdrawalQueue.isClaimable(requestId));
+        assert(!withdrawalQueue.isClaimable(requestId));
 
         assertEq(withdrawalQueue.convertInto(withdrawalAmount), claimedAmount);
 

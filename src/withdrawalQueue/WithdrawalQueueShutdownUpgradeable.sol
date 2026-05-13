@@ -60,6 +60,10 @@ abstract contract WithdrawalQueueShutdownUpgradeable is AccessManagedUpgradeable
         emit Shutdown(shutdownRate);
     }
 
+    function setVerifier(address verifier) external restricted {
+        _setVerifier(verifier);
+    }
+
     function convertInto(uint256 fromTokenAmount) public view virtual override returns (uint256 intoTokenAmount) {
         uint256 rate = _getWithdrawalQueueShutdownStorage().rate;
         return fromTokenAmount.mulDiv(rate, RATE_ONE);

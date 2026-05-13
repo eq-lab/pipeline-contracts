@@ -4,7 +4,7 @@ pragma solidity ^0.8.34;
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IERC20Managed} from "../interfaces/IERC20Managed.sol";
-import {VerifiedRequestsQueueUpgradeable} from "./VerifiedRequestsQueueUpgradeable.sol";
+import {VerifiedRequestsQueueUpgradeable} from "../requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
 
 abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable {
     using SafeERC20 for IERC20;
@@ -104,8 +104,8 @@ abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable
 
     function isClaimable(uint256 requestId) external view returns (bool) {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
-
-        return $.queued[requestId] <= claimable();
+        Request memory request = requests(requestId);
+        return !request.claimed && $.queued[requestId] <= claimable();
     }
 
     function fromToken() external view returns (address) {
