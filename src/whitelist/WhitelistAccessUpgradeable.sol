@@ -10,7 +10,7 @@ import {IWhitelist} from "../interfaces/IWhitelist.sol";
 contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
     /// @custom:storage-location erc7201:pipeline.storage.WhitelistAccess
     struct WhitelistAccessStorage {
-        mapping(address user => uint256) allowedUntil;
+        mapping(address user => bool) allowed;
     }
 
     // keccak256(abi.encode(uint256(keccak256("pipeline.storage.WhitelistAccess")) - 1)) & ~bytes32(uint256(0xff))
@@ -23,14 +23,11 @@ contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
         }
     }
 
-    event SystemAddressAllowed(address indexed systemAddress);
-    event UserAllowed(address indexed user, uint256 until);
+    event Allowed(address indexed user);
     event Disallowed(address indexed who);
 
-    error WhitelistAccessZeroAddress();
     error WhitelistAccessAlreadyAllowed();
     error WhitelistAccessNoAllowance();
-    error WhitelistAccessAllowanceInPast();
 
     function __WhitelistAccess_init(address authority) internal onlyInitializing {
         __AccessManaged_init(authority);
@@ -38,57 +35,36 @@ contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
     }
 
     function __WhitelistAccess_init_unchained() internal onlyInitializing {
-        _setAllowance(address(0), type(uint256).max);
+        _allow(address(0));
     }
 
-    function allowSystemAddress(address systemAddress) external restricted {
-        _setAllowance(systemAddress, type(uint256).max);
-
-        emit SystemAddressAllowed(systemAddress);
+    function allow(address user) external restricted {
+        _allow(user);
     }
 
-    function allowUser(address user, uint256 until) external restricted {
-        if (user == address(0)) revert WhitelistAccessZeroAddress();
-
-        _setAllowance(user, until);
-
-        emit UserAllowed(user, until);
-    }
-
-    function disallow(address who) external restricted {
-        if (!_isAllowed(who)) revert WhitelistAccessNoAllowance();
+    function disallow(address user) external restricted {
+        if (!_isAllowed(user)) revert WhitelistAccessNoAllowance();
 
         WhitelistAccessStorage storage $ = _getWhitelistAccessStorage();
-        delete $.allowedUntil[who];
+        delete $.allowed[user];
 
-        emit Disallowed(who);
+        emit Disallowed(user);
     }
 
-    function isAllowed(address who) external view returns (bool) {
-        return _isAllowed(who);
+    function isAllowed(address user) external view returns (bool) {
+        return _isAllowed(user);
     }
 
-    function allowedUntil(address who) external view returns (uint256) {
-        return _allowedUntil(who);
-    }
-
-    function _setAllowance(address who, uint256 until) private {
+    function _allow(address user) private {
         WhitelistAccessStorage storage $ = _getWhitelistAccessStorage();
+        if ($.allowed[user]) revert WhitelistAccessAlreadyAllowed();
 
-        if (until < block.timestamp) revert WhitelistAccessAllowanceInPast();
-
-        uint256 current = $.allowedUntil[who];
-        if (current >= until) revert WhitelistAccessAlreadyAllowed();
-
-        $.allowedUntil[who] = until;
+        $.allowed[user] = true;
+        emit Allowed(user);
     }
 
     function _isAllowed(address who) internal view returns (bool) {
-        return _allowedUntil(who) >= block.timestamp;
-    }
-
-    function _allowedUntil(address who) internal view returns (uint256) {
         WhitelistAccessStorage storage $ = _getWhitelistAccessStorage();
-        return $.allowedUntil[who];
+        return $.allowed[who];
     }
 }

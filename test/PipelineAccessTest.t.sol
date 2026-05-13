@@ -17,7 +17,7 @@ contract PipelineAccessTest is PipelineTestSetUp {
         address withAccess = makeAddr("withAccess");
 
         vm.prank(whitelistAdmin);
-        whitelistRegistry.allowUser(withAccess, type(uint256).max);
+        whitelistRegistry.allow(withAccess);
 
         vm.prank(noAccess);
         vm.expectRevert(

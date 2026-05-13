@@ -10,7 +10,7 @@ contract PipelineYieldMinterTest is PipelineTestSetUp {
         super.setUp();
 
         vm.prank(whitelistAdmin);
-        whitelistRegistry.allowSystemAddress(address(sPlUsd));
+        whitelistRegistry.allow(address(sPlUsd));
     }
 
     function test_setUp() public view {

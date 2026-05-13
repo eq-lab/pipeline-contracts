@@ -156,7 +156,7 @@ contract PipelineTestSetUp is Test {
         withdrawalQueue = PipelineWithdrawalQueue(address(new ERC1967Proxy(address(implementation), data)));
 
         vm.prank(whitelistAdmin);
-        whitelistRegistry.allowSystemAddress(address(withdrawalQueue));
+        whitelistRegistry.allow(address(withdrawalQueue));
 
         uint64 roleId = uint64(bytes8(keccak256("BURNER")));
 
@@ -239,10 +239,9 @@ contract PipelineTestSetUp is Test {
         vm.prank(admin);
         authority.grantRole(roleId, whitelistAdmin, 0);
 
-        bytes4[] memory selectors = new bytes4[](3);
-        selectors[0] = WhitelistAccessUpgradeable.allowSystemAddress.selector;
-        selectors[1] = WhitelistAccessUpgradeable.allowUser.selector;
-        selectors[2] = WhitelistAccessUpgradeable.disallow.selector;
+        bytes4[] memory selectors = new bytes4[](2);
+        selectors[0] = WhitelistAccessUpgradeable.allow.selector;
+        selectors[1] = WhitelistAccessUpgradeable.disallow.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(whitelistRegistry), selectors, roleId);
