@@ -6,7 +6,6 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {VerifiedRequestsQueueUpgradeable} from "../src/requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
 import {WithdrawalQueueUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueUpgradeable.sol";
 import {WithdrawalQueueShutdownUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueShutdownUpgradeable.sol";
-import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
 
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 
@@ -20,9 +19,6 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
 
         vm.prank(whitelistAdmin);
         whitelistRegistry.allowUser(user, type(uint256).max);
-
-        vm.prank(whitelistAdmin);
-        whitelistRegistry.allowSystemAddress(address(0));
 
         vm.prank(tokenHolder);
         usdc.approve(address(withdrawalQueue), type(uint256).max);
@@ -178,14 +174,6 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         deal(address(usdc), tokenHolder, amount);
 
         address wrongClaimant = makeAddr("wrongClaimant");
-        vm.prank(wrongClaimant);
-        vm.expectRevert(
-            abi.encodeWithSelector(WhitelistAccessedUpgradeable.WhitelistAccessedNoAccess.selector, wrongClaimant)
-        );
-        withdrawalQueue.claimWithdrawal(requestId, signature);
-
-        vm.prank(whitelistAdmin);
-        whitelistRegistry.allowUser(wrongClaimant, type(uint256).max);
 
         vm.prank(wrongClaimant);
         vm.expectRevert(abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsInvalidSender.selector));

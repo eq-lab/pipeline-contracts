@@ -19,9 +19,6 @@ contract PipelineUSDTest is PipelineTestSetUp {
         whitelistRegistry.allowSystemAddress(userTwo);
 
         vm.prank(whitelistAdmin);
-        whitelistRegistry.allowSystemAddress(address(0));
-
-        vm.prank(whitelistAdmin);
         whitelistRegistry.allowSystemAddress(address(yieldMinter));
 
         deal(address(plUsd), userOne, 1_000_000_000);

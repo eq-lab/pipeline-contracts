@@ -37,7 +37,9 @@ contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
         __WhitelistAccess_init_unchained();
     }
 
-    function __WhitelistAccess_init_unchained() internal onlyInitializing {}
+    function __WhitelistAccess_init_unchained() internal onlyInitializing {
+        _setAllowance(address(0), type(uint256).max);
+    }
 
     function allowSystemAddress(address systemAddress) external restricted {
         _setAllowance(systemAddress, type(uint256).max);

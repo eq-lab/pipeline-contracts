@@ -23,7 +23,6 @@ abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable
         uint256 totalQueued;
         // total of all the requests that have been claimed
         uint256 totalClaimed;
-        uint256 rate;
         IERC20Managed fromToken;
         IERC20 intoToken;
         address intoTokenHolder;

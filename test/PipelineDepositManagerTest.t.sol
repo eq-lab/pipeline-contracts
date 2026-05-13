@@ -3,7 +3,6 @@ pragma solidity ^0.8.34;
 
 import {RateLimiterUpgradeable} from "../src/depositManager/RateLimiterUpgradeable.sol";
 import {DepositManagerUpgradeable} from "../src/depositManager/DepositManagerUpgradeable.sol";
-import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
 import {VerifiedRequestsQueueUpgradeable} from "../src/requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
 
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
@@ -15,9 +14,6 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
 
     function setUp() public override {
         super.setUp();
-
-        vm.prank(whitelistAdmin);
-        whitelistRegistry.allowSystemAddress(address(0));
 
         vm.prank(whitelistAdmin);
         whitelistRegistry.allowSystemAddress(user);
