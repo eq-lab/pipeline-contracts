@@ -22,8 +22,8 @@ contract PipelineDepositManager is UUPSUpgradeable, RateLimiterUpgradeable, Depo
         RateLimitConfig calldata rateLimitConfig
     ) external initializer {
         __AccessManaged_init(authority);
-        __VerifiedRequestsQueue_init("PipelineDepositManager", "v1", verifier);
         __RateLimiter_init_unchained(rateLimitConfig);
+        __VerifiedRequestsQueue_init("PipelineDepositManager", "v1", verifier);
         __DepositManager_init_unchained(custodian, depositedToken, mintedToken, minDeposit);
     }
 
