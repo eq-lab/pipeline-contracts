@@ -50,6 +50,7 @@ contract RateLimiterUpgradeable is Initializable, AccessManagedUpgradeable {
     }
 
     function __RateLimiter_init_unchained(RateLimitConfig calldata _rateLimitConfig) internal onlyInitializing {
+        if (_rateLimitConfig.window == 0) revert RateLimiterWrongValue();
         RateLimiterStorage storage $ = _getRateLimiterStorage();
         $.rateLimitConfig = _rateLimitConfig;
     }
