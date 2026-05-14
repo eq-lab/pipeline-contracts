@@ -41,8 +41,8 @@ abstract contract WithdrawalQueueShutdownUpgradeable is AccessManagedUpgradeable
         address _intoToken,
         address _intoTokenHolder
     ) internal onlyInitializing {
-        __WithdrawalQueueShutdown_init_unchained();
         __WithdrawalQueue_init(name, version, verifier, _fromToken, _intoToken, _intoTokenHolder);
+        __WithdrawalQueueShutdown_init_unchained();
     }
 
     function __WithdrawalQueueShutdown_init_unchained() internal onlyInitializing {
