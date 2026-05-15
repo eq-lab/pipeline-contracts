@@ -11,10 +11,10 @@ import {IERC20Managed} from "./interfaces/IERC20Managed.sol";
 contract PipelineYieldMinterV1 is EIP712, AccessManaged {
     using ECDSA for bytes32;
 
-    address public mintAuthority;
+    address public immutable mintAuthority;
+    address public immutable stakedPlUsd;
+    IERC20Managed public immutable plUsd;
     uint256 public nextNonce;
-    address public stakedPlUsd;
-    IERC20Managed public plUsd;
 
     bytes32 public constant YIELD_MINT_TYPEHASH = keccak256("YieldMint(uint256 amount,uint256 nonce)");
 
