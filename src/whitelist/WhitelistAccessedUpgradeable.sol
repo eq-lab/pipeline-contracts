@@ -6,11 +6,15 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 import {IWhitelist} from "../interfaces/IWhitelist.sol";
 
 contract WhitelistAccessedUpgradeable is Initializable {
+    event WhitelistAccessEnabled();
+    event WhitelistAccessDisabled();
+
     error WhitelistAccessedNoAccess(address);
 
     /// @custom:storage-location erc7201:pipeline.storage.WhitelistAccessed
     struct WhitelistAccessedStorage {
         IWhitelist whitelist;
+        bool disabled;
     }
 
     // keccak256(abi.encode(uint256(keccak256("pipeline.storage.WhitelistAccessed")) - 1)) & ~bytes32(uint256(0xff))
@@ -37,8 +41,23 @@ contract WhitelistAccessedUpgradeable is Initializable {
         _;
     }
 
+    function isWhitelistDisabled() public view returns (bool) {
+        WhitelistAccessedStorage storage $ = _getWhitelistAccessedStorage();
+        return $.disabled;
+    }
+
+    function _enableWhitelist() internal {
+        _getWhitelistAccessedStorage().disabled = false;
+        emit WhitelistAccessEnabled();
+    }
+
+    function _disableWhitelist() internal {
+        _getWhitelistAccessedStorage().disabled = true;
+        emit WhitelistAccessDisabled();
+    }
+
     function _onlyAllowed(address who) private view {
-        if (!_isAllowed(who)) revert WhitelistAccessedNoAccess(who);
+        if (!isWhitelistDisabled() && !_isAllowed(who)) revert WhitelistAccessedNoAccess(who);
     }
 
     function _isAllowed(address who) internal view returns (bool) {

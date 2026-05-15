@@ -3,6 +3,8 @@ pragma solidity ^0.8.34;
 
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
+import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
+
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 
 contract PipelineUSDTest is PipelineTestSetUp {
@@ -65,5 +67,26 @@ contract PipelineUSDTest is PipelineTestSetUp {
 
         vm.prank(address(withdrawalQueue));
         plUsd.burn(1_000);
+    }
+
+    function testFuss_whitelistDisabled(address user) public {
+        vm.assume(!whitelistRegistry.isAllowed(user));
+
+        deal(address(plUsd), user, 1_000);
+
+        vm.prank(whitelistAdmin);
+        plUsd.disableWhitelist();
+        assert(plUsd.isWhitelistDisabled());
+
+        vm.prank(user);
+        plUsd.transfer(whitelistAdmin, 1_000);
+
+        vm.prank(whitelistAdmin);
+        plUsd.enableWhitelist();
+        assert(!plUsd.isWhitelistDisabled());
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(WhitelistAccessedUpgradeable.WhitelistAccessedNoAccess.selector, user));
+        plUsd.transfer(whitelistAdmin, 1_000);
     }
 }
