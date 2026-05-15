@@ -245,6 +245,12 @@ contract PipelineTestSetUp is Test {
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(whitelistRegistry), selectors, roleId);
+
+        selectors[0] = PipelineUSD.enableWhitelist.selector;
+        selectors[1] = PipelineUSD.disableWhitelist.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
     }
 
     function _setUpDepositManagerAdmin() private {

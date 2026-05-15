@@ -44,6 +44,14 @@ contract PipelineUSD is
         _unpause();
     }
 
+    function enableWhitelist() external restricted {
+        _enableWhitelist();
+    }
+
+    function disableWhitelist() external restricted {
+        _disableWhitelist();
+    }
+
     function decimals() public view virtual override returns (uint8) {
         return 6;
     }
