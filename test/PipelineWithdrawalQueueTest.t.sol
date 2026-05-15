@@ -2,6 +2,7 @@
 pragma solidity ^0.8.34;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import {VerifiedRequestsQueueUpgradeable} from "../src/requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
 import {WithdrawalQueueUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueUpgradeable.sol";
@@ -95,6 +96,24 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
 
         VerifiedRequestsQueueUpgradeable.Request memory request = withdrawalQueue.requests(requestId);
         assert(request.claimed);
+    }
+
+    function test_pauses() public {
+        vm.prank(queueManager);
+        withdrawalQueue.pause();
+        assert(withdrawalQueue.paused());
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        withdrawalQueue.requestWithdrawal(1);
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        withdrawalQueue.claimWithdrawal(0, "");
+
+        vm.prank(queueManager);
+        withdrawalQueue.unpause();
+        assert(!withdrawalQueue.paused());
     }
 
     function testFuzz_setAssetHolder(address newAssetHolder) public {

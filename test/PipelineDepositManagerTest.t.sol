@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.34;
 
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+
 import {RateLimiterUpgradeable} from "../src/depositManager/RateLimiterUpgradeable.sol";
 import {DepositManagerUpgradeable} from "../src/depositManager/DepositManagerUpgradeable.sol";
 import {VerifiedRequestsQueueUpgradeable} from "../src/requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
@@ -202,6 +204,24 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
             abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsQueueAlreadyClaimed.selector)
         );
         depositManager.claimDeposit(requestId, signature);
+    }
+
+    function test_pauses() public {
+        vm.prank(depositManagerAdmin);
+        depositManager.pause();
+        assert(depositManager.paused());
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        depositManager.requestDeposit(1);
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        depositManager.claimDeposit(0, "");
+
+        vm.prank(depositManagerAdmin);
+        depositManager.unpause();
+        assert(!depositManager.paused());
     }
 
     function test_setMinDeposit(uint256 newMinDeposit) public {

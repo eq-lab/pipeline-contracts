@@ -64,6 +64,14 @@ abstract contract WithdrawalQueueShutdownUpgradeable is AccessManagedUpgradeable
         _setVerifier(verifier);
     }
 
+    function pause() external restricted {
+        _pause();
+    }
+
+    function unpause() external restricted {
+        _unpause();
+    }
+
     function convertToAssets(uint256 shares) public view virtual override returns (uint256 assets) {
         uint256 rate = _getWithdrawalQueueShutdownStorage().rate;
         return shares.mulDiv(rate, RATE_ONE);

@@ -19,15 +19,6 @@ contract PipelineWithdrawalQueue is UUPSUpgradeable, WithdrawalQueueShutdownUpgr
         __WithdrawalQueueShutdown_init("PipelineWithdrawalQueue", "v1", verifier, _plUsd, _usdc, assetHolder);
     }
 
-    function claimWithdrawal(uint256 requestId, bytes calldata verifierSignature)
-        external
-        virtual
-        override
-        returns (uint256 amount)
-    {
-        return _claimWithdrawal(requestId, verifierSignature);
-    }
-
     function setAssetHolder(address newAssetHolder) external virtual override restricted {
         _setAssetHolder(newAssetHolder);
     }

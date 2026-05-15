@@ -252,14 +252,16 @@ contract PipelineTestSetUp is Test {
         vm.prank(admin);
         authority.grantRole(roleId, depositManagerAdmin, 0);
 
-        bytes4[] memory selectors = new bytes4[](7);
+        bytes4[] memory selectors = new bytes4[](9);
         selectors[0] = DepositManagerUpgradeable.setMinDeposit.selector;
         selectors[1] = DepositManagerUpgradeable.setCustodian.selector;
         selectors[2] = DepositManagerUpgradeable.setVerifier.selector;
-        selectors[3] = RateLimiterUpgradeable.increaseTxLimit.selector;
-        selectors[4] = RateLimiterUpgradeable.decreaseTxLimit.selector;
-        selectors[5] = RateLimiterUpgradeable.increaseWindowLimit.selector;
-        selectors[6] = RateLimiterUpgradeable.decreaseWindowLimit.selector;
+        selectors[3] = DepositManagerUpgradeable.pause.selector;
+        selectors[4] = DepositManagerUpgradeable.unpause.selector;
+        selectors[5] = RateLimiterUpgradeable.increaseTxLimit.selector;
+        selectors[6] = RateLimiterUpgradeable.decreaseTxLimit.selector;
+        selectors[7] = RateLimiterUpgradeable.increaseWindowLimit.selector;
+        selectors[8] = RateLimiterUpgradeable.decreaseWindowLimit.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(depositManager), selectors, roleId);
@@ -271,10 +273,12 @@ contract PipelineTestSetUp is Test {
         vm.prank(admin);
         authority.grantRole(roleId, queueManager, 0);
 
-        bytes4[] memory selectors = new bytes4[](3);
+        bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = WithdrawalQueueUpgradeable.setAssetHolder.selector;
         selectors[1] = WithdrawalQueueShutdownUpgradeable.setShutdownRate.selector;
         selectors[2] = WithdrawalQueueShutdownUpgradeable.setVerifier.selector;
+        selectors[3] = WithdrawalQueueShutdownUpgradeable.pause.selector;
+        selectors[4] = WithdrawalQueueShutdownUpgradeable.unpause.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(withdrawalQueue), selectors, roleId);

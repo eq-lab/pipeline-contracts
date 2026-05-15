@@ -6,11 +6,12 @@ import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeE
 import {
     AccessManagedUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import {IERC20Managed} from "../interfaces/IERC20Managed.sol";
 import {VerifiedRequestsQueueUpgradeable} from "../requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
 
-contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequestsQueueUpgradeable {
+contract DepositManagerUpgradeable is AccessManagedUpgradeable, PausableUpgradeable, VerifiedRequestsQueueUpgradeable {
     using SafeERC20 for IERC20;
     using SafeERC20 for IERC20Managed;
 
@@ -66,11 +67,15 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
         $.minDeposit = _minDeposit;
     }
 
-    function requestDeposit(uint256 amount) external returns (uint256 requestId) {
+    function requestDeposit(uint256 amount) external whenNotPaused returns (uint256 requestId) {
         return _requestDeposit(amount);
     }
 
-    function claimDeposit(uint256 requestId, bytes calldata verifierSignature) external returns (uint256 amount) {
+    function claimDeposit(uint256 requestId, bytes calldata verifierSignature)
+        external
+        whenNotPaused
+        returns (uint256 amount)
+    {
         return _claimDeposit(requestId, verifierSignature);
     }
 
@@ -96,6 +101,14 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
 
     function setVerifier(address verifier) external restricted {
         _setVerifier(verifier);
+    }
+
+    function pause() external restricted {
+        _pause();
+    }
+
+    function unpause() external restricted {
+        _unpause();
     }
 
     function minDeposit() external view returns (uint256) {

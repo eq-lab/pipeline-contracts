@@ -2,11 +2,12 @@
 pragma solidity ^0.8.34;
 
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import {IERC20Managed} from "../interfaces/IERC20Managed.sol";
 import {VerifiedRequestsQueueUpgradeable} from "../requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
 
-abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable {
+abstract contract WithdrawalQueueUpgradeable is PausableUpgradeable, VerifiedRequestsQueueUpgradeable {
     using SafeERC20 for IERC20;
     using SafeERC20 for IERC20Managed;
 
@@ -62,7 +63,12 @@ abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable
         _setAssetHolder(_assetHolder);
     }
 
-    function requestWithdrawal(uint256 amount) external virtual returns (uint256 requestId, uint256 queued) {
+    function requestWithdrawal(uint256 amount)
+        external
+        virtual
+        whenNotPaused
+        returns (uint256 requestId, uint256 queued)
+    {
         requestId = _enqueueRequest(msg.sender, amount);
 
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
@@ -77,6 +83,7 @@ abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable
     function claimWithdrawal(uint256 requestId, bytes calldata verifierSignature)
         external
         virtual
+        whenNotPaused
         returns (uint256 amount)
     {
         return _claimWithdrawal(requestId, verifierSignature);
