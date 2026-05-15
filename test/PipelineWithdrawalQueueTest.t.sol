@@ -25,15 +25,15 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
     }
 
     function test_setUp() public view {
-        assertEq(address(withdrawalQueue.fromToken()), address(plUsd));
-        assertEq(address(withdrawalQueue.intoToken()), address(usdc));
-        assertEq(withdrawalQueue.intoTokenHolder(), tokenHolder);
+        assertEq(address(withdrawalQueue.plUsd()), address(plUsd));
+        assertEq(address(withdrawalQueue.usdc()), address(usdc));
+        assertEq(withdrawalQueue.assetHolder(), tokenHolder);
         assertEq(withdrawalQueue.authority(), address(authority));
         assertEq(withdrawalQueue.verifier(), withdrawalVerifier);
 
         uint256 conversionAmount = 1e18;
-        assertEq(withdrawalQueue.convertInto(conversionAmount), conversionAmount);
-        assertEq(withdrawalQueue.convertFrom(conversionAmount), conversionAmount);
+        assertEq(withdrawalQueue.convertToShares(conversionAmount), conversionAmount);
+        assertEq(withdrawalQueue.convertToAssets(conversionAmount), conversionAmount);
     }
 
     function testFuzz_requestWithdrawal(uint256 withdrawalAmount) public {
@@ -69,13 +69,13 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         assertEq(withdrawalQueue.withdrawalRequestQueued(requestId), queuedAfter);
     }
 
-    function testFuzz_increaseClaimable(uint256 amount) public {
-        uint256 claimableBefore = withdrawalQueue.claimable();
+    function testFuzz_increaseClaimableAmount(uint256 amount) public {
+        uint256 claimableBefore = withdrawalQueue.claimableAmount();
         vm.assume(amount <= type(uint256).max - claimableBefore && amount != 0);
 
         deal(address(usdc), tokenHolder, amount);
 
-        assertEq(withdrawalQueue.claimable(), claimableBefore + amount);
+        assertEq(withdrawalQueue.claimableAmount(), claimableBefore + amount);
     }
 
     function testFuzz_claimWithdrawal(uint256 withdrawalAmount) public {
@@ -97,13 +97,13 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         assert(request.claimed);
     }
 
-    function testFuzz_changeIntoTokenHolder(address newTokenHolder) public {
-        vm.assume(newTokenHolder != address(0) && newTokenHolder != withdrawalQueue.intoTokenHolder());
+    function testFuzz_setAssetHolder(address newAssetHolder) public {
+        vm.assume(newAssetHolder != address(0) && newAssetHolder != withdrawalQueue.assetHolder());
 
         vm.prank(queueManager);
-        withdrawalQueue.changeIntoTokenHolder(newTokenHolder);
+        withdrawalQueue.setAssetHolder(newAssetHolder);
 
-        assertEq(withdrawalQueue.intoTokenHolder(), newTokenHolder);
+        assertEq(withdrawalQueue.assetHolder(), newAssetHolder);
     }
 
     function testFuzz_setShutdown(uint256 shutdownRate, uint256 convertAmount) public {
@@ -113,8 +113,8 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         vm.prank(queueManager);
         withdrawalQueue.setShutdownRate(shutdownRate);
 
-        assertEq(withdrawalQueue.convertInto(convertAmount), Math.mulDiv(convertAmount, shutdownRate, one));
-        assertEq(withdrawalQueue.convertFrom(convertAmount), Math.mulDiv(convertAmount, one, shutdownRate));
+        assertEq(withdrawalQueue.convertToAssets(convertAmount), Math.mulDiv(convertAmount, shutdownRate, one));
+        assertEq(withdrawalQueue.convertToShares(convertAmount), Math.mulDiv(convertAmount, one, shutdownRate));
     }
 
     function testFuzz_shutdownClaim(uint256 withdrawalAmount) public {
@@ -151,11 +151,11 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
 
         vm.prank(queueManager);
         vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueZeroAddress.selector));
-        withdrawalQueue.changeIntoTokenHolder(address(0));
+        withdrawalQueue.setAssetHolder(address(0));
 
         vm.prank(queueManager);
         vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueSameValue.selector));
-        withdrawalQueue.changeIntoTokenHolder(tokenHolder);
+        withdrawalQueue.setAssetHolder(tokenHolder);
 
         uint256 amount = 1_000;
 
@@ -226,7 +226,7 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
 
         assert(!withdrawalQueue.isClaimable(requestId));
 
-        assertEq(withdrawalQueue.convertInto(withdrawalAmount), claimedAmount);
+        assertEq(withdrawalQueue.convertToAssets(withdrawalAmount), claimedAmount);
 
         assertEq(usdc.balanceOf(sender), senderBalanceBefore + claimedAmount);
         assertEq(usdc.balanceOf(address(tokenHolder)), tokenHolderBalanceBefore - claimedAmount);

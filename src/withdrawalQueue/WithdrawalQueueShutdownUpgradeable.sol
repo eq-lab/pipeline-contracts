@@ -37,11 +37,11 @@ abstract contract WithdrawalQueueShutdownUpgradeable is AccessManagedUpgradeable
         string memory name,
         string memory version,
         address verifier,
-        address _fromToken,
-        address _intoToken,
-        address _intoTokenHolder
+        address _share,
+        address _asset,
+        address _assetHolder
     ) internal onlyInitializing {
-        __WithdrawalQueue_init(name, version, verifier, _fromToken, _intoToken, _intoTokenHolder);
+        __WithdrawalQueue_init(name, version, verifier, _share, _asset, _assetHolder);
         __WithdrawalQueueShutdown_init_unchained();
     }
 
@@ -64,13 +64,13 @@ abstract contract WithdrawalQueueShutdownUpgradeable is AccessManagedUpgradeable
         _setVerifier(verifier);
     }
 
-    function convertInto(uint256 fromTokenAmount) public view virtual override returns (uint256 intoTokenAmount) {
+    function convertToAssets(uint256 shares) public view virtual override returns (uint256 assets) {
         uint256 rate = _getWithdrawalQueueShutdownStorage().rate;
-        return fromTokenAmount.mulDiv(rate, RATE_ONE);
+        return shares.mulDiv(rate, RATE_ONE);
     }
 
-    function convertFrom(uint256 intoTokenAmount) public view virtual override returns (uint256 fromTokenAmount) {
+    function convertToShares(uint256 assets) public view virtual override returns (uint256 shares) {
         uint256 rate = _getWithdrawalQueueShutdownStorage().rate;
-        return intoTokenAmount.mulDiv(RATE_ONE, rate);
+        return assets.mulDiv(RATE_ONE, rate);
     }
 }

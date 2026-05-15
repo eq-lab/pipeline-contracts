@@ -26,8 +26,8 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
     struct DepositManagerStorage {
         uint256 minDeposit;
         address custodian;
-        IERC20 fromToken;
-        IERC20Managed intoToken;
+        IERC20 asset;
+        IERC20Managed share;
     }
 
     // keccak256(abi.encode(uint256(keccak256("pipeline.storage.DepositManager")) - 1)) & ~bytes32(uint256(0xff))
@@ -46,25 +46,23 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
         string memory version,
         address verifier,
         address _custodian,
-        address _fromToken,
-        address _intoToken,
+        address asset,
+        address share,
         uint256 _minDeposit
     ) internal onlyInitializing {
         __AccessManaged_init(authority);
         __VerifiedRequestsQueue_init(name, version, verifier);
-        __DepositManager_init_unchained(_custodian, _fromToken, _intoToken, _minDeposit);
+        __DepositManager_init_unchained(_custodian, asset, share, _minDeposit);
     }
 
-    function __DepositManager_init_unchained(
-        address _custodian,
-        address _fromToken,
-        address _intoToken,
-        uint256 _minDeposit
-    ) internal onlyInitializing {
+    function __DepositManager_init_unchained(address _custodian, address asset, address share, uint256 _minDeposit)
+        internal
+        onlyInitializing
+    {
         DepositManagerStorage storage $ = _getDepositManagerStorage();
         $.custodian = _custodian;
-        $.fromToken = IERC20(_fromToken);
-        $.intoToken = IERC20Managed(_intoToken);
+        $.asset = IERC20(asset);
+        $.share = IERC20Managed(share);
         $.minDeposit = _minDeposit;
     }
 
@@ -72,8 +70,8 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
         return _requestDeposit(amount);
     }
 
-    function claim(uint256 requestId, bytes calldata verifierSignature) external returns (uint256 amount) {
-        return _claim(requestId, verifierSignature);
+    function claimDeposit(uint256 requestId, bytes calldata verifierSignature) external returns (uint256 amount) {
+        return _claimDeposit(requestId, verifierSignature);
     }
 
     function setCustodian(address _custodian) external restricted {
@@ -114,16 +112,16 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
         requestId = _enqueueRequest(msg.sender, amount);
 
         DepositManagerStorage storage $ = _getDepositManagerStorage();
-        $.fromToken.safeTransferFrom(msg.sender, $.custodian, amount);
+        $.asset.safeTransferFrom(msg.sender, $.custodian, amount);
 
         emit DepositRequested(requestId, msg.sender, amount);
     }
 
-    function _claim(uint256 requestId, bytes calldata verifierSignature) internal returns (uint256 amount) {
+    function _claimDeposit(uint256 requestId, bytes calldata verifierSignature) internal returns (uint256 amount) {
         amount = _claimRequest(requestId, verifierSignature);
 
         DepositManagerStorage storage $ = _getDepositManagerStorage();
-        $.intoToken.mint(msg.sender, amount);
+        $.share.mint(msg.sender, amount);
     }
 
     function _preDepositHook(uint256 amount) internal virtual {
@@ -131,11 +129,11 @@ contract DepositManagerUpgradeable is AccessManagedUpgradeable, VerifiedRequests
         if (amount < $.minDeposit) revert DepositManagerLessThanMinAmount();
     }
 
-    function _depositedToken() internal view returns (address) {
-        return address(_getDepositManagerStorage().fromToken);
+    function _asset() internal view returns (address) {
+        return address(_getDepositManagerStorage().asset);
     }
 
-    function _mintedToken() internal view returns (address) {
-        return address(_getDepositManagerStorage().intoToken);
+    function _share() internal view returns (address) {
+        return address(_getDepositManagerStorage().share);
     }
 }

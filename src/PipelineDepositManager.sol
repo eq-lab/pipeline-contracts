@@ -16,23 +16,23 @@ contract PipelineDepositManager is UUPSUpgradeable, RateLimiterUpgradeable, Depo
         address authority,
         address verifier,
         address custodian,
-        address depositedToken,
-        address mintedToken,
+        address _usdc,
+        address _plUsd,
         uint256 minDeposit,
         RateLimitConfig calldata rateLimitConfig
     ) external initializer {
         __AccessManaged_init(authority);
         __RateLimiter_init_unchained(rateLimitConfig);
         __VerifiedRequestsQueue_init("PipelineDepositManager", "v1", verifier);
-        __DepositManager_init_unchained(custodian, depositedToken, mintedToken, minDeposit);
+        __DepositManager_init_unchained(custodian, _usdc, _plUsd, minDeposit);
     }
 
     function usdc() external view returns (address) {
-        return _depositedToken();
+        return _asset();
     }
 
     function plUsd() external view returns (address) {
-        return _mintedToken();
+        return _share();
     }
 
     function _preDepositHook(uint256 amount) internal override {
