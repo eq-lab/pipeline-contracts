@@ -286,7 +286,7 @@ contract PipelineTestSetUp is Test {
         vm.prank(admin);
         authority.grantRole(roleId, loanRegistryManager, 0);
 
-        bytes4[] memory selectors = new bytes4[](7);
+        bytes4[] memory selectors = new bytes4[](9);
         selectors[0] = PipelineLoanRegistry.mintLoan.selector;
         selectors[1] = PipelineLoanRegistry.updateStatus.selector;
         selectors[2] = PipelineLoanRegistry.updateCCR.selector;
@@ -294,6 +294,8 @@ contract PipelineTestSetUp is Test {
         selectors[4] = PipelineLoanRegistry.setDefault.selector;
         selectors[5] = PipelineLoanRegistry.closeLoan.selector;
         selectors[6] = PipelineLoanRegistry.recordPayment.selector;
+        selectors[7] = PipelineLoanRegistry.pause.selector;
+        selectors[8] = PipelineLoanRegistry.unpause.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(loanRegistry), selectors, roleId);

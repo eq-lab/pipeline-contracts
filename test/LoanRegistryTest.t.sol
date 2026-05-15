@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.34;
 
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+
 import {ILoanRegistry} from "../src/interfaces/ILoanRegistry.sol";
 import {LoanRegistryUpgradeable} from "../src/loanRegistry/LoanRegistryUpgradeable.sol";
 
@@ -362,6 +364,48 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanOwner);
         vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonTransferrable.selector));
         loanRegistry.transferFrom(loanOwner, recipient, loanId);
+    }
+
+    function test_pauses() public {
+        address loanOwner = makeAddr("loanOwner");
+
+        vm.prank(loanRegistryManager);
+        loanRegistry.pause();
+
+        assert(loanRegistry.paused());
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        loanRegistry.mintLoan(loanOwner, "", 0, bytes32("location"));
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        loanRegistry.updateStatus(0, ILoanRegistry.LoanStatus.Default);
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        loanRegistry.updateCCR(0, 0);
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        loanRegistry.updateLocation(0, bytes32("newLocation"));
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        loanRegistry.setDefault(0);
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        loanRegistry.closeLoan(0, ILoanRegistry.ClosureReason.EarlyRepayment);
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        loanRegistry.recordPayment(0, 0, 0, 0, 0);
+
+        vm.prank(loanRegistryManager);
+        loanRegistry.unpause();
+
+        assert(!loanRegistry.paused());
     }
 
     function _mintDefaultLoan(address to) private returns (uint256 loanId) {

@@ -89,6 +89,7 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
 
     function _mintLoan(address to, string calldata metadataURI, uint64 initialMaturity, bytes32 location)
         internal
+        whenNotPaused
         returns (uint256 loanId)
     {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
@@ -105,7 +106,7 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
         }
     }
 
-    function _updateStatus(uint256 loanId, LoanStatus status) internal {
+    function _updateStatus(uint256 loanId, LoanStatus status) internal whenNotPaused {
         if (status > LoanStatus.WatchList) revert LoanRegistryInapplicableStatus(loanId, status);
 
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
@@ -120,7 +121,7 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
         emit StatusUpdated(loanId, status);
     }
 
-    function _updateCCR(uint256 loanId, uint32 newCcrBps) internal {
+    function _updateCCR(uint256 loanId, uint32 newCcrBps) internal whenNotPaused {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
 
@@ -134,7 +135,7 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
     }
 
     // TODO: what is `location` precisely? won't `bytes32` be too restrictive?
-    function _updateLocation(uint256 loanId, bytes32 newLocation) internal {
+    function _updateLocation(uint256 loanId, bytes32 newLocation) internal whenNotPaused {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
 
@@ -146,7 +147,7 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
         emit LocationUpdated(loanId, newLocation);
     }
 
-    function _setDefault(uint256 loanId) internal {
+    function _setDefault(uint256 loanId) internal whenNotPaused {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
 
@@ -158,7 +159,7 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
         emit LoanDefaulted(loanId);
     }
 
-    function _closeLoan(uint256 loanId, ClosureReason reason) internal {
+    function _closeLoan(uint256 loanId, ClosureReason reason) internal whenNotPaused {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
 
@@ -180,7 +181,7 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
         uint256 seniorPrincipal,
         uint256 seniorInterest,
         uint256 equityAmount
-    ) internal {
+    ) internal whenNotPaused {
         if (seniorPrincipal + seniorInterest + equityAmount > offtakerAmount) {
             revert LoanRegistryWrongRepaymentData();
         }

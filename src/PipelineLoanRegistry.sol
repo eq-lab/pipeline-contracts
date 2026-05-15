@@ -60,5 +60,13 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
         _closeLoan(loanId, reason);
     }
 
+    function pause() external restricted {
+        _pause();
+    }
+
+    function unpause() external restricted {
+        _unpause();
+    }
+
     function _authorizeUpgrade(address newImplementation) internal override restricted {}
 }
