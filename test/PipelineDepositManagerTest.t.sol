@@ -66,7 +66,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         assert(!request.claimed);
     }
 
-    function testFuzz_claim(uint256 amount) public {
+    function testFuzz_claimDeposit(uint256 amount) public {
         vm.assume(amount >= minDeposit && amount <= usdcAmount);
 
         vm.prank(user);
@@ -83,7 +83,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         assert(depositManager.verifySignature(requestId, signature));
 
         vm.prank(user);
-        uint256 mintAmount = depositManager.claim(requestId, signature);
+        uint256 mintAmount = depositManager.claimDeposit(requestId, signature);
 
         assertEq(mintAmount, amount);
 
@@ -179,29 +179,29 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
         vm.expectRevert(
             abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsInvalidRequestId.selector)
         );
-        depositManager.claim(requestId + 1, invalidSignature);
+        depositManager.claimDeposit(requestId + 1, invalidSignature);
 
         address wrongClaimant = makeAddr("wrongClaimant");
         vm.prank(wrongClaimant);
         vm.expectRevert(abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsInvalidSender.selector));
-        depositManager.claim(requestId, invalidSignature);
+        depositManager.claimDeposit(requestId, invalidSignature);
 
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsInvalidSignature.selector)
         );
-        depositManager.claim(requestId, invalidSignature);
+        depositManager.claimDeposit(requestId, invalidSignature);
 
         bytes memory signature = _createSignature(requestId, user, amount, depositVerifierPrivateKey);
 
         vm.prank(user);
-        depositManager.claim(requestId, signature);
+        depositManager.claimDeposit(requestId, signature);
 
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(VerifiedRequestsQueueUpgradeable.VerifiedRequestsQueueAlreadyClaimed.selector)
         );
-        depositManager.claim(requestId, signature);
+        depositManager.claimDeposit(requestId, signature);
     }
 
     function test_setMinDeposit(uint256 newMinDeposit) public {

@@ -11,15 +11,12 @@ contract PipelineWithdrawalQueue is UUPSUpgradeable, WithdrawalQueueShutdownUpgr
         _disableInitializers();
     }
 
-    function initialize(
-        address authority,
-        address verifier,
-        address fromToken,
-        address intoToken,
-        address intoTokenHolder
-    ) external initializer {
+    function initialize(address authority, address verifier, address _plUsd, address _usdc, address assetHolder)
+        external
+        initializer
+    {
         __AccessManaged_init(authority);
-        __WithdrawalQueueShutdown_init("PipelineWithdrawalQueue", "v1", verifier, fromToken, intoToken, intoTokenHolder);
+        __WithdrawalQueueShutdown_init("PipelineWithdrawalQueue", "v1", verifier, _plUsd, _usdc, assetHolder);
     }
 
     function claimWithdrawal(uint256 requestId, bytes calldata verifierSignature)
@@ -31,8 +28,16 @@ contract PipelineWithdrawalQueue is UUPSUpgradeable, WithdrawalQueueShutdownUpgr
         return _claimWithdrawal(requestId, verifierSignature);
     }
 
-    function changeIntoTokenHolder(address newIntoTokenHolder) external virtual override restricted {
-        _changeIntoTokenHolder(newIntoTokenHolder);
+    function setAssetHolder(address newAssetHolder) external virtual override restricted {
+        _setAssetHolder(newAssetHolder);
+    }
+
+    function usdc() external view returns (address) {
+        return _asset();
+    }
+
+    function plUsd() external view returns (address) {
+        return _share();
     }
 
     function _authorizeUpgrade(address newImplementation) internal override restricted {}

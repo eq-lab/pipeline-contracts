@@ -24,7 +24,7 @@ contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
     }
 
     event Allowed(address indexed user);
-    event Disallowed(address indexed who);
+    event Disallowed(address indexed user);
 
     error WhitelistAccessAlreadyAllowed();
     error WhitelistAccessNoAllowance();
@@ -63,8 +63,8 @@ contract WhitelistAccessUpgradeable is IWhitelist, AccessManagedUpgradeable {
         emit Allowed(user);
     }
 
-    function _isAllowed(address who) internal view returns (bool) {
+    function _isAllowed(address user) internal view returns (bool) {
         WhitelistAccessStorage storage $ = _getWhitelistAccessStorage();
-        return $.allowed[who];
+        return $.allowed[user];
     }
 }

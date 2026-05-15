@@ -11,7 +11,7 @@ abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable
     using SafeERC20 for IERC20Managed;
 
     event WithdrawalRequested(address indexed withdrawer, uint256 indexed requestId, uint256 amount, uint256 queued);
-    event IntoTokenHolderSet(address indexed intoTokenHolder);
+    event AssetHolderSet(address indexed assetHolder);
 
     error WithdrawalQueueZeroAddress();
     error WithdrawalQueueSameValue();
@@ -23,9 +23,9 @@ abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable
         uint256 totalQueued;
         // total of all the requests that have been claimed
         uint256 totalClaimed;
-        IERC20Managed fromToken;
-        IERC20 intoToken;
-        address intoTokenHolder;
+        IERC20Managed share;
+        IERC20 asset;
+        address assetHolder;
         mapping(uint256 requestId => uint256) queued;
     }
 
@@ -43,23 +43,23 @@ abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable
         string memory name,
         string memory version,
         address verifier,
-        address _fromToken,
-        address _intoToken,
-        address _intoTokenHolder
+        address share,
+        address asset,
+        address _assetHolder
     ) internal onlyInitializing {
         __VerifiedRequestsQueue_init(name, version, verifier);
-        __WithdrawalQueue_init_unchained(_fromToken, _intoToken, _intoTokenHolder);
+        __WithdrawalQueue_init_unchained(share, asset, _assetHolder);
     }
 
-    function __WithdrawalQueue_init_unchained(address _fromToken, address _intoToken, address _intoTokenHolder)
+    function __WithdrawalQueue_init_unchained(address share, address asset, address _assetHolder)
         internal
         onlyInitializing
     {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
-        $.fromToken = IERC20Managed(_fromToken);
-        $.intoToken = IERC20(_intoToken);
+        $.share = IERC20Managed(share);
+        $.asset = IERC20(asset);
 
-        _setIntoTokenHolder(_intoTokenHolder);
+        _setAssetHolder(_assetHolder);
     }
 
     function requestWithdrawal(uint256 amount) external virtual returns (uint256 requestId, uint256 queued) {
@@ -69,7 +69,7 @@ abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable
         queued = $.totalQueued + amount;
         $.totalQueued = queued;
         $.queued[requestId] = queued;
-        $.fromToken.safeTransferFrom(msg.sender, address(this), amount);
+        $.share.safeTransferFrom(msg.sender, address(this), amount);
 
         emit WithdrawalRequested(msg.sender, requestId, amount, queued);
     }
@@ -82,7 +82,7 @@ abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable
         return _claimWithdrawal(requestId, verifierSignature);
     }
 
-    function changeIntoTokenHolder(address newIntoTokenHolder) external virtual;
+    function setAssetHolder(address newAssetHolder) external virtual;
 
     function withdrawalRequestQueued(uint256 requestId) external view returns (uint256) {
         return _getWithdrawalQueueStorage().queued[requestId];
@@ -93,38 +93,27 @@ abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable
         return ($.totalQueued, $.totalClaimed);
     }
 
-    function claimable() public view returns (uint256) {
+    function claimableAmount() public view returns (uint256) {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
-
-        IERC20 _intoToken = $.intoToken;
-        address _intoTokenHolder = $.intoTokenHolder;
-        return $.totalClaimed + convertFrom(_intoToken.balanceOf(_intoTokenHolder));
+        return $.totalClaimed + convertToShares($.asset.balanceOf($.assetHolder));
     }
 
     function isClaimable(uint256 requestId) external view returns (bool) {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
         Request memory request = requests(requestId);
-        return !request.claimed && $.queued[requestId] <= claimable();
+        return !request.claimed && $.queued[requestId] <= claimableAmount();
     }
 
-    function fromToken() external view returns (address) {
-        return address(_getWithdrawalQueueStorage().fromToken);
+    function assetHolder() external view returns (address) {
+        return address(_getWithdrawalQueueStorage().assetHolder);
     }
 
-    function intoToken() external view returns (address) {
-        return address(_getWithdrawalQueueStorage().intoToken);
+    function convertToShares(uint256 assets) public view virtual returns (uint256 shares) {
+        return assets;
     }
 
-    function intoTokenHolder() external view returns (address) {
-        return address(_getWithdrawalQueueStorage().intoTokenHolder);
-    }
-
-    function convertInto(uint256 fromTokenAmount) public view virtual returns (uint256 intoTokenAmount) {
-        return fromTokenAmount;
-    }
-
-    function convertFrom(uint256 intoTokenAmount) public view virtual returns (uint256 fromTokenAmount) {
-        return intoTokenAmount;
+    function convertToAssets(uint256 shares) public view virtual returns (uint256 assets) {
+        return shares;
     }
 
     function _claimWithdrawal(uint256 requestId, bytes calldata verifierSignature)
@@ -135,28 +124,34 @@ abstract contract WithdrawalQueueUpgradeable is VerifiedRequestsQueueUpgradeable
         uint256 requestAmount = _claimRequest(requestId, verifierSignature);
 
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
-        IERC20 _intoToken = $.intoToken;
-        address _intoTokenHolder = $.intoTokenHolder;
+        IERC20 asset = $.asset;
+        address _assetHolder = $.assetHolder;
 
-        uint256 _claimable = $.totalClaimed + convertFrom(_intoToken.balanceOf(_intoTokenHolder));
-        if ($.queued[requestId] > _claimable) revert WithdrawalQueueTooEarly();
+        uint256 _claimableAmount = $.totalClaimed + convertToShares(asset.balanceOf(_assetHolder));
+        if ($.queued[requestId] > _claimableAmount) revert WithdrawalQueueTooEarly();
 
-        amount = convertInto(requestAmount);
+        amount = convertToAssets(requestAmount);
         $.totalClaimed += requestAmount;
 
-        _intoToken.safeTransferFrom(_intoTokenHolder, msg.sender, amount);
-        $.fromToken.burn(requestAmount);
+        asset.safeTransferFrom(_assetHolder, msg.sender, amount);
+        $.share.burn(requestAmount);
     }
 
-    function _changeIntoTokenHolder(address newIntoTokenHolder) internal {
-        if (_getWithdrawalQueueStorage().intoTokenHolder == newIntoTokenHolder) revert WithdrawalQueueSameValue();
-        _setIntoTokenHolder(newIntoTokenHolder);
+    function _setAssetHolder(address newAssetHolder) internal {
+        if (newAssetHolder == address(0)) revert WithdrawalQueueZeroAddress();
+
+        WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
+        if ($.assetHolder == newAssetHolder) revert WithdrawalQueueSameValue();
+        $.assetHolder = newAssetHolder;
+
+        emit AssetHolderSet(newAssetHolder);
     }
 
-    function _setIntoTokenHolder(address newIntoTokenHolder) private {
-        if (newIntoTokenHolder == address(0)) revert WithdrawalQueueZeroAddress();
-        _getWithdrawalQueueStorage().intoTokenHolder = newIntoTokenHolder;
+    function _asset() internal view returns (address) {
+        return address(_getWithdrawalQueueStorage().asset);
+    }
 
-        emit IntoTokenHolderSet(newIntoTokenHolder);
+    function _share() internal view returns (address) {
+        return address(_getWithdrawalQueueStorage().share);
     }
 }

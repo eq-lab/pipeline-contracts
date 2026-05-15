@@ -272,7 +272,7 @@ contract PipelineTestSetUp is Test {
         authority.grantRole(roleId, queueManager, 0);
 
         bytes4[] memory selectors = new bytes4[](3);
-        selectors[0] = WithdrawalQueueUpgradeable.changeIntoTokenHolder.selector;
+        selectors[0] = WithdrawalQueueUpgradeable.setAssetHolder.selector;
         selectors[1] = WithdrawalQueueShutdownUpgradeable.setShutdownRate.selector;
         selectors[2] = WithdrawalQueueShutdownUpgradeable.setVerifier.selector;
 
