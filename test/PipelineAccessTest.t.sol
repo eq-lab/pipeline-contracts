@@ -150,7 +150,7 @@ contract PipelineAccessTest is PipelineTestSetUp {
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.mintLoan(caller, "", 0, bytes32(0));
+        loanRegistry.mintLoan(caller, "", 0, "");
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
@@ -162,11 +162,11 @@ contract PipelineAccessTest is PipelineTestSetUp {
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.updateLocation(0, bytes32(0));
+        loanRegistry.updateLocation(0, "");
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.setDefault(0);
+        loanRegistry.setDefault(0, 0);
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));

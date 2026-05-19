@@ -18,8 +18,8 @@ interface ILoanRegistry {
     struct MutableLoanData {
         LoanStatus status;
         uint32 ccrBps; // collateral coverage ratio, basis points
-        bytes32 location; // warehouse/port short code or coordinates digest
         uint64 maturity; // unix timestamp; may be extended
         ClosureReason closureReason; // set only on transition → Closed
+        string location; // warehouse/port short code or coordinates digest
     }
 }

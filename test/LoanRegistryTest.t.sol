@@ -19,7 +19,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         address loanOwner = makeAddr("loanOwner");
         string memory metadataURI = "test_mintLoan_metadataURI";
         uint64 initialMaturity = uint64(block.timestamp + 100);
-        bytes32 location = bytes32("location");
+        string memory location = "location";
 
         uint256 nextLoanId = loanRegistry.nextLoanId();
 
@@ -92,7 +92,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         loanRegistry.updateStatus(loanId, mutableDataBefore.status);
 
         vm.prank(loanRegistryManager);
-        loanRegistry.setDefault(loanId);
+        loanRegistry.setDefault(loanId, 0);
 
         vm.prank(loanRegistryManager);
         vm.expectRevert(
@@ -152,7 +152,11 @@ contract LoanRegistryTest is PipelineTestSetUp {
         loanRegistry.closeLoan(loanId, ILoanRegistry.ClosureReason.EarlyRepayment);
 
         vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryAlreadyClosed.selector, loanId));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, loanId, ILoanRegistry.LoanStatus.Closed
+            )
+        );
         loanRegistry.updateCCR(loanId, mutableDataBefore.ccrBps + 1);
     }
 
@@ -161,7 +165,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
         ILoanRegistry.MutableLoanData memory mutableDataBefore = loanRegistry.mutableLoanData(loanId);
 
-        bytes32 newLocation = bytes32("newLocation");
+        string memory newLocation = "newLocation";
         assertNotEq(mutableDataBefore.location, newLocation);
 
         vm.prank(loanRegistryManager);
@@ -178,7 +182,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
     function test_updateLocationReverts() public {
         uint256 loanId = _mintDefaultLoan(makeAddr("loanOwner"));
 
-        bytes32 newLocation = bytes32("newLocation");
+        string memory newLocation = "newLocation";
 
         vm.prank(loanRegistryManager);
         vm.expectRevert(
@@ -190,7 +194,11 @@ contract LoanRegistryTest is PipelineTestSetUp {
         loanRegistry.closeLoan(loanId, ILoanRegistry.ClosureReason.EarlyRepayment);
 
         vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryAlreadyClosed.selector, loanId));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, loanId, ILoanRegistry.LoanStatus.Closed
+            )
+        );
         loanRegistry.updateLocation(loanId, newLocation);
     }
 
@@ -200,7 +208,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         ILoanRegistry.MutableLoanData memory mutableDataBefore = loanRegistry.mutableLoanData(loanId);
 
         vm.prank(loanRegistryManager);
-        loanRegistry.setDefault(loanId);
+        loanRegistry.setDefault(loanId, 0);
 
         ILoanRegistry.MutableLoanData memory mutableLoanData = loanRegistry.mutableLoanData(loanId);
         assertEq(uint256(mutableLoanData.status), uint256(ILoanRegistry.LoanStatus.Default));
@@ -219,10 +227,10 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.expectRevert(
             abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, loanId + 1)
         );
-        loanRegistry.setDefault(loanId + 1);
+        loanRegistry.setDefault(loanId + 1, 0);
 
         vm.prank(loanRegistryManager);
-        loanRegistry.setDefault(loanId);
+        loanRegistry.setDefault(loanId, 0);
 
         vm.prank(loanRegistryManager);
         vm.expectRevert(
@@ -232,7 +240,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
                 ILoanRegistry.LoanStatus.Default
             )
         );
-        loanRegistry.setDefault(loanId);
+        loanRegistry.setDefault(loanId, 0);
 
         loanId = _mintDefaultLoan(makeAddr("loanOwner"));
 
@@ -275,7 +283,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         loanRegistry.closeLoan(loanId + 1, ILoanRegistry.ClosureReason.EarlyRepayment);
 
         vm.prank(loanRegistryManager);
-        loanRegistry.setDefault(loanId);
+        loanRegistry.setDefault(loanId, 0);
 
         vm.prank(loanRegistryManager);
         vm.expectRevert(
@@ -376,7 +384,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
         vm.prank(loanRegistryManager);
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
-        loanRegistry.mintLoan(loanOwner, "", 0, bytes32("location"));
+        loanRegistry.mintLoan(loanOwner, "", 0, "location");
 
         vm.prank(loanRegistryManager);
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
@@ -388,11 +396,11 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
         vm.prank(loanRegistryManager);
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
-        loanRegistry.updateLocation(0, bytes32("newLocation"));
+        loanRegistry.updateLocation(0, "newLocation");
 
         vm.prank(loanRegistryManager);
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
-        loanRegistry.setDefault(0);
+        loanRegistry.setDefault(0, 0);
 
         vm.prank(loanRegistryManager);
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
@@ -411,7 +419,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
     function _mintDefaultLoan(address to) private returns (uint256 loanId) {
         string memory defaultMetadataURI = "defaultMetadataURI";
         uint64 initialMaturity = uint64(block.timestamp + 100);
-        bytes32 location = bytes32("location");
+        string memory location = "location";
 
         vm.prank(loanRegistryManager);
         return loanRegistry.mintLoan(to, defaultMetadataURI, initialMaturity, location);
