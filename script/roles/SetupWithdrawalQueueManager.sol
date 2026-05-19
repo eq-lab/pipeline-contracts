@@ -9,7 +9,7 @@ import {AccessManager} from "@openzeppelin/contracts/access/manager/AccessManage
 import {WithdrawalQueueShutdownUpgradeable} from "../../src/withdrawalQueue/WithdrawalQueueShutdownUpgradeable.sol";
 import {WithdrawalQueueUpgradeable} from "../../src/withdrawalQueue/WithdrawalQueueUpgradeable.sol";
 
-contract SetupDepositManagerAdmin is Script, Deployments {
+contract SetupWithdrawalQueueManager is Script, Deployments {
     uint64 constant WITHDRAWAL_QUEUE_MANAGER_ROLE_ID = uint64(bytes8(keccak256("WITHDRAWAL_QUEUE_MANAGER_ROLE")));
 
     function run(string memory tag) external {
@@ -26,8 +26,8 @@ contract SetupDepositManagerAdmin is Script, Deployments {
         uint32 delay = uint32(uint256(valueOf("WithdrawalQueueAdmin__Delay", true)));
 
         vm.startBroadcast();
-        accessManager.setTargetFunctionRole(queue, selectors, DEPOSIT_MANAGER_ADMIN_ROLE_ID);
-        accessManager.grantRole(DEPOSIT_MANAGER_ADMIN_ROLE_ID, roleHolder, delay);
+        accessManager.setTargetFunctionRole(queue, selectors, WITHDRAWAL_QUEUE_MANAGER_ROLE_ID);
+        accessManager.grantRole(WITHDRAWAL_QUEUE_MANAGER_ROLE_ID, roleHolder, delay);
         vm.stopBroadcast();
     }
 }
