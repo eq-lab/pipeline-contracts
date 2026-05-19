@@ -41,7 +41,7 @@ contract ChainValues {
             bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
         values[HOODI_CHAIN_ID]["YieldMintAuthority"] =
             bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
-        values[HOODI_CHAIN_ID]["Custodian"] = bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODI_CHAIN_ID]["Custodian"] = bytes32(uint256(uint160(0x0D5367AcD773339653858E73C2023199485FDe6c)));
 
         values[HOODI_CHAIN_ID]["USDC"] = bytes32(uint256(uint160(0xe198F1EEF83Dd613B874FC3c2D5BAf6C8a4A4597)));
 
@@ -52,20 +52,24 @@ contract ChainValues {
         values[HOODI_CHAIN_ID]["DepositManager__RateLimit__Window"] = bytes32(uint256(86400));
         values[HOODI_CHAIN_ID]["DepositManager__RateLimit__Shift"] = bytes32(uint256(0));
         values[HOODI_CHAIN_ID]["DepositManager__Verifier"] =
-            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+            bytes32(uint256(uint160(0xd3b978148e1Ee61b528354f72b39451c46dCA57C)));
 
         values[HOODI_CHAIN_ID]["LoanRegistry__erc721Name"] = bytes32(bytes("LoanRegistryName"));
         values[HOODI_CHAIN_ID]["LoanRegistry__erc721Symbol"] = bytes32(bytes("LRS"));
 
         values[HOODI_CHAIN_ID]["WithdrawalQueue__TokenHolderMCP"] =
-            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+            bytes32(uint256(uint160(0x0D5367AcD773339653858E73C2023199485FDe6c)));
         values[HOODI_CHAIN_ID]["WithdrawalQueue__Verifier"] =
-            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+            bytes32(uint256(uint160(0xd3b978148e1Ee61b528354f72b39451c46dCA57C)));
 
         // =========== Roles ===========
         values[HOODI_CHAIN_ID]["DepositManagerAdmin"] =
             bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
         values[HOODI_CHAIN_ID]["DepositManagerAdmin__Delay"] = bytes32(uint256(0));
+
+        values[HOODI_CHAIN_ID]["WithdrawalQueueAdmin"] =
+            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODI_CHAIN_ID]["DWithdrawalQueueAdmin__Delay"] = bytes32(uint256(0));
 
         values[HOODI_CHAIN_ID]["EmergencyRole"] = bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
         values[HOODI_CHAIN_ID]["EmergencyRole__Delay"] = bytes32(uint256(0));
@@ -75,7 +79,7 @@ contract ChainValues {
         values[HOODI_CHAIN_ID]["LoanRegistryManager__Delay"] = bytes32(uint256(0));
 
         values[HOODI_CHAIN_ID]["WhitelistManager"] =
-            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+            bytes32(uint256(uint160(0xd3b978148e1Ee61b528354f72b39451c46dCA57C)));
         values[HOODI_CHAIN_ID]["WhitelistManager__Delay"] = bytes32(uint256(0));
 
         values[HOODI_CHAIN_ID]["YieldMinterManager"] =
