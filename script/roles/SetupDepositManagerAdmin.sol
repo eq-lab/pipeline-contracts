@@ -23,9 +23,9 @@ contract SetupDepositManagerAdmin is Script, Deployments {
         selectors[2] = RateLimiterUpgradeable.increaseTxLimit.selector;
         selectors[3] = RateLimiterUpgradeable.increaseWindowLimit.selector;
 
-        (address depositManager,) = readUpgradeable("DepositManager");
+        (address depositManager,) = readUpgradeable("PipelineDepositManager");
         address roleHolder = address(uint160(uint256(valueOf("DepositManagerAdmin", false))));
-        uint32 delay = uint32(uint256(valueOf("DepositManagerAdmin__Delay", false)));
+        uint32 delay = uint32(uint256(valueOf("DepositManagerAdmin__Delay", true)));
 
         vm.startBroadcast();
         accessManager.setTargetFunctionRole(depositManager, selectors, DEPOSIT_MANAGER_ADMIN_ROLE_ID);

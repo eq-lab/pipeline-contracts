@@ -22,7 +22,7 @@ contract SetupWhitelistManagerRole is Script, Deployments {
 
         (address whitelistRegistry,) = readUpgradeable("WhitelistRegistry");
         address roleHolder = address(uint160(uint256(valueOf("WhitelistManager", false))));
-        uint32 delay = uint32(uint256(valueOf("WhitelistManager__Delay", false)));
+        uint32 delay = uint32(uint256(valueOf("WhitelistManager__Delay", true)));
 
         vm.startBroadcast();
         accessManager.setTargetFunctionRole(whitelistRegistry, selectors, WHITELIST_MANAGER_ROLE_ID);
