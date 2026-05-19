@@ -8,10 +8,17 @@ import {
 import {ILoanRegistry} from "../interfaces/ILoanRegistry.sol";
 
 contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
+    event LoanMinted(
+        uint256 indexed loanId,
+        address indexed holder,
+        string indexed metadataURI,
+        uint64 initialMaturity,
+        string location
+    );
     event StatusUpdated(uint256 indexed loanId, LoanStatus indexed newStatus);
-    event CCRUpdated(uint256 indexed loanId, uint256 newCcrBps);
-    event LocationUpdated(uint256 indexed loanId, bytes32 indexed newLocation);
-    event LoanDefaulted(uint256 indexed loanId);
+    event CCRUpdated(uint256 indexed loanId, uint32 newCcrBps);
+    event LocationUpdated(uint256 indexed loanId, string indexed newLocation);
+    event LoanDefaulted(uint256 indexed loanId, uint32 ccrBps);
     event LoanClosed(uint256 indexed loanId, ClosureReason indexed reason);
     event Repayment(
         uint256 indexed tokenId,
@@ -87,7 +94,7 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
         equityDistributed = $.equityDistributed;
     }
 
-    function _mintLoan(address to, string calldata metadataURI, uint64 initialMaturity, bytes32 location)
+    function _mintLoan(address to, string calldata metadataURI, uint64 initialMaturity, string calldata location)
         internal
         whenNotPaused
         returns (uint256 loanId)
@@ -104,6 +111,8 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
         unchecked {
             ++$.nextLoanId;
         }
+
+        emit LoanMinted(loanId, to, metadataURI, initialMaturity, location);
     }
 
     function _updateStatus(uint256 loanId, LoanStatus status) internal whenNotPaused {
@@ -125,38 +134,38 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
 
-        // TODO: default?
-        if ($.mutableLoanData[loanId].status == LoanStatus.Closed) revert LoanRegistryAlreadyClosed(loanId);
+        LoanStatus currentStatus = $.mutableLoanData[loanId].status;
+        if (currentStatus > LoanStatus.WatchList) revert LoanRegistryWrongCurrentStatus(loanId, currentStatus);
 
-        // TODO: are any additional assertions required, like `currentCcrBps < newCcrBps`?
         $.mutableLoanData[loanId].ccrBps = newCcrBps;
 
         emit CCRUpdated(loanId, newCcrBps);
     }
 
-    // TODO: what is `location` precisely? won't `bytes32` be too restrictive?
-    function _updateLocation(uint256 loanId, bytes32 newLocation) internal whenNotPaused {
-        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
-        if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
-
-        // TODO: default?
-        if ($.mutableLoanData[loanId].status == LoanStatus.Closed) revert LoanRegistryAlreadyClosed(loanId);
-
-        $.mutableLoanData[loanId].location = newLocation;
-
-        emit LocationUpdated(loanId, newLocation);
-    }
-
-    function _setDefault(uint256 loanId) internal whenNotPaused {
+    function _updateLocation(uint256 loanId, string calldata newLocation) internal whenNotPaused {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
 
         LoanStatus currentStatus = $.mutableLoanData[loanId].status;
         if (currentStatus > LoanStatus.WatchList) revert LoanRegistryWrongCurrentStatus(loanId, currentStatus);
 
-        $.mutableLoanData[loanId].status = LoanStatus.Default;
+        $.mutableLoanData[loanId].location = newLocation;
 
-        emit LoanDefaulted(loanId);
+        emit LocationUpdated(loanId, newLocation);
+    }
+
+    function _setDefault(uint256 loanId, uint32 ccrBps) internal whenNotPaused {
+        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
+        if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
+
+        LoanStatus currentStatus = $.mutableLoanData[loanId].status;
+        if (currentStatus > LoanStatus.WatchList) revert LoanRegistryWrongCurrentStatus(loanId, currentStatus);
+
+        MutableLoanData storage loanData = $.mutableLoanData[loanId];
+        loanData.status = LoanStatus.Default;
+        loanData.ccrBps = ccrBps;
+
+        emit LoanDefaulted(loanId, ccrBps);
     }
 
     function _closeLoan(uint256 loanId, ClosureReason reason) internal whenNotPaused {

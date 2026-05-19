@@ -8,6 +8,7 @@ optimizer = true
 optimizer-runs = 10_000_000
 via_ir = true
 dynamic_test_linking = true
+offline = true
 
 ffi = true
 ast = true
