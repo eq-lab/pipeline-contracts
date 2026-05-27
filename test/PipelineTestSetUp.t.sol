@@ -297,7 +297,7 @@ contract PipelineTestSetUp is Test {
         authority.grantRole(roleId, loanRegistryManager, 0);
 
         bytes4[] memory selectors = new bytes4[](9);
-        selectors[0] = PipelineLoanRegistry.mintLoan.selector;
+        selectors[0] = PipelineLoanRegistry.drawLoan.selector;
         selectors[1] = PipelineLoanRegistry.updateStatus.selector;
         selectors[2] = PipelineLoanRegistry.updateCCR.selector;
         selectors[3] = PipelineLoanRegistry.updateLocation.selector;

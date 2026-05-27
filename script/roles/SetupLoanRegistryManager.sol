@@ -17,7 +17,7 @@ contract SetupLoanRegistryManager is Script, Deployments {
         AccessManager accessManager = AccessManager(readPlain("AccessManager"));
 
         bytes4[] memory selectors = new bytes4[](7);
-        selectors[0] = PipelineLoanRegistry.mintLoan.selector;
+        selectors[0] = PipelineLoanRegistry.drawLoan.selector;
         selectors[1] = PipelineLoanRegistry.updateStatus.selector;
         selectors[2] = PipelineLoanRegistry.updateCCR.selector;
         selectors[3] = PipelineLoanRegistry.updateLocation.selector;

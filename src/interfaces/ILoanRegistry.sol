@@ -15,11 +15,32 @@ interface ILoanRegistry {
         Default
     }
 
+    struct ImmutableLoanData {
+        uint256 seniorTranche;
+        uint256 equityTranche;
+        uint256 offtakerPrice;
+        uint256 rateBps;
+        uint128 originationTimestamp;
+        uint128 originalMaturityTimestamp;
+        string facility;
+    }
+
     struct MutableLoanData {
         LoanStatus status;
-        uint32 ccrBps; // collateral coverage ratio, basis points
-        uint64 maturity; // unix timestamp; may be extended
-        ClosureReason closureReason; // set only on transition → Closed
-        string location; // warehouse/port short code or coordinates digest
+        ClosureReason closureReason;
+        RepaymentData repaymentData;
+        uint128 currentMaturityDate;
+        uint32 ccrBps;
+        string location;
+    }
+
+    struct RepaymentData {
+        uint256 offtakerAmount;
+        uint256 equityDistributed;
+        uint256 seniorPrincipalRepaid;
+        uint256 seniorInterest;
+        uint256 mgmtFee;
+        uint256 perfFee;
+        uint256 oetAlloc;
     }
 }

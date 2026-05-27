@@ -148,9 +148,11 @@ contract PipelineAccessTest is PipelineTestSetUp {
     function testFuzz_loanRegistryAccess(address caller) public {
         vm.assume(caller != loanRegistryManager);
 
+        ILoanRegistry.ImmutableLoanData memory loanData;
+
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.mintLoan(caller, "", 0, "");
+        loanRegistry.drawLoan(caller, "", loanData, 0, "");
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
@@ -172,9 +174,11 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         loanRegistry.closeLoan(0, ILoanRegistry.ClosureReason.None);
 
+        ILoanRegistry.RepaymentData memory repayment;
+
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.recordPayment(0, 0, 0, 0, 0);
+        loanRegistry.recordPayment(0, repayment);
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));

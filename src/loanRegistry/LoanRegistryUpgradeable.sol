@@ -8,25 +8,15 @@ import {
 import {ILoanRegistry} from "../interfaces/ILoanRegistry.sol";
 
 contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
-    event LoanMinted(
-        uint256 indexed loanId,
-        address indexed holder,
-        string indexed metadataURI,
-        uint64 initialMaturity,
-        string location
-    );
+    uint32 public constant ONE = 1_000_000;
+
+    event LoanDrawn(uint256 indexed loanId, address indexed holder, string indexed metadataURI);
     event StatusUpdated(uint256 indexed loanId, LoanStatus indexed newStatus);
     event CCRUpdated(uint256 indexed loanId, uint32 newCcrBps);
     event LocationUpdated(uint256 indexed loanId, string indexed newLocation);
     event LoanDefaulted(uint256 indexed loanId, uint32 ccrBps);
     event LoanClosed(uint256 indexed loanId, ClosureReason indexed reason);
-    event Repayment(
-        uint256 indexed tokenId,
-        uint256 offtakerAmount,
-        uint256 seniorPrincipal,
-        uint256 seniorInterest,
-        uint256 equityAmount
-    );
+    event Repayment(uint256 indexed tokenId, RepaymentData repaymentData);
 
     error LoanRegistryNonExistentLoanId(uint256);
     error LoanRegistryAlreadyClosed(uint256);
@@ -35,16 +25,15 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
     error LoanRegistryInapplicableStatus(uint256 loanId, LoanStatus status);
     error LoanRegistryNonTransferrable();
     error LoanRegistryWrongRepaymentData();
+    error LoanRegistryLowCcr();
 
     /// @custom:storage-location erc7201:pipeline.storage.LoanRegistry
     struct LoanRegistryStorage {
         uint256 nextLoanId;
-        uint256 offtakerReceivedTotal;
-        uint256 seniorPrincipalRepaid;
-        uint256 seniorInterestRepaid;
-        uint256 equityDistributed;
         mapping(uint256 index => string) metadataURI;
+        mapping(uint256 index => ImmutableLoanData) immutableLoanData;
         mapping(uint256 index => MutableLoanData) mutableLoanData;
+        mapping(uint256 index => RepaymentData) repaymentData;
     }
 
     // keccak256(abi.encode(uint256(keccak256("pipeline.storage.LoanRegistry")) - 1)) & ~bytes32(uint256(0xff))
@@ -68,43 +57,41 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
         return _getLoanRegistryStorage().metadataURI[tokenId];
     }
 
-    function mutableLoanData(uint256 loanId) external view returns (MutableLoanData memory) {
-        return _getLoanRegistryStorage().mutableLoanData[loanId];
-    }
-
     function nextLoanId() external view returns (uint256) {
         return _getLoanRegistryStorage().nextLoanId;
     }
 
-    function repaymentData()
-        external
-        view
-        returns (
-            uint256 offtakerReceivedTotal,
-            uint256 seniorPrincipalRepaid,
-            uint256 seniorInterestRepaid,
-            uint256 equityDistributed
-        )
-    {
-        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
-
-        offtakerReceivedTotal = $.offtakerReceivedTotal;
-        seniorPrincipalRepaid = $.seniorPrincipalRepaid;
-        seniorInterestRepaid = $.seniorInterestRepaid;
-        equityDistributed = $.equityDistributed;
+    function immutableLoanData(uint256 loanId) external view returns (ImmutableLoanData memory) {
+        return _getLoanRegistryStorage().immutableLoanData[loanId];
     }
 
-    function _mintLoan(address to, string calldata metadataURI, uint64 initialMaturity, string calldata location)
-        internal
-        whenNotPaused
-        returns (uint256 loanId)
-    {
+    function mutableLoanData(uint256 loanId) external view returns (MutableLoanData memory) {
+        return _getLoanRegistryStorage().mutableLoanData[loanId];
+    }
+
+    function repaymentData(uint256 loanId) external view returns (RepaymentData memory) {
+        return _getLoanRegistryStorage().repaymentData[loanId];
+    }
+
+    function _drawLoan(
+        address to,
+        string calldata metadataURI,
+        ImmutableLoanData calldata _immutableLoanData,
+        uint32 initialCcrBps,
+        string calldata location
+    ) internal whenNotPaused returns (uint256 loanId) {
+        if (initialCcrBps < ONE) revert LoanRegistryLowCcr();
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         loanId = $.nextLoanId;
 
         $.metadataURI[loanId] = metadataURI;
-        $.mutableLoanData[loanId].maturity = initialMaturity;
-        $.mutableLoanData[loanId].location = location;
+        $.immutableLoanData[loanId] = _immutableLoanData;
+
+        MutableLoanData storage _mutableLoanData = $.mutableLoanData[loanId];
+
+        _mutableLoanData.currentMaturityDate = _immutableLoanData.originalMaturityTimestamp;
+        _mutableLoanData.ccrBps = initialCcrBps;
+        _mutableLoanData.location = location;
 
         _mint(to, loanId);
 
@@ -112,7 +99,7 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
             ++$.nextLoanId;
         }
 
-        emit LoanMinted(loanId, to, metadataURI, initialMaturity, location);
+        emit LoanDrawn(loanId, to, metadataURI);
     }
 
     function _updateStatus(uint256 loanId, LoanStatus status) internal whenNotPaused {
@@ -184,26 +171,28 @@ contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanRegistry {
         emit LoanClosed(loanId, reason);
     }
 
-    function _recordPayment(
-        uint256 loanId,
-        uint256 offtakerAmount,
-        uint256 seniorPrincipal,
-        uint256 seniorInterest,
-        uint256 equityAmount
-    ) internal whenNotPaused {
-        if (seniorPrincipal + seniorInterest + equityAmount > offtakerAmount) {
+    function _recordPayment(uint256 loanId, RepaymentData calldata repaymentUpdate) internal whenNotPaused {
+        uint256 repaymentSum = repaymentUpdate.seniorPrincipalRepaid + repaymentUpdate.seniorInterest
+            + repaymentUpdate.equityDistributed + repaymentUpdate.mgmtFee + repaymentUpdate.perfFee
+            + repaymentUpdate.oetAlloc;
+        if (repaymentSum > repaymentUpdate.offtakerAmount) {
             revert LoanRegistryWrongRepaymentData();
         }
 
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
 
-        $.offtakerReceivedTotal += offtakerAmount;
-        $.seniorPrincipalRepaid += seniorPrincipal;
-        $.seniorInterestRepaid += seniorInterest;
-        $.equityDistributed += equityAmount;
+        RepaymentData storage _repaymentData = $.repaymentData[loanId];
 
-        emit Repayment(loanId, offtakerAmount, seniorPrincipal, seniorInterest, equityAmount);
+        _repaymentData.offtakerAmount += repaymentUpdate.offtakerAmount;
+        _repaymentData.equityDistributed += repaymentUpdate.equityDistributed;
+        _repaymentData.seniorPrincipalRepaid += repaymentUpdate.seniorPrincipalRepaid;
+        _repaymentData.seniorInterest += repaymentUpdate.seniorInterest;
+        _repaymentData.mgmtFee += repaymentUpdate.mgmtFee;
+        _repaymentData.perfFee += repaymentUpdate.perfFee;
+        _repaymentData.oetAlloc += repaymentUpdate.oetAlloc;
+
+        emit Repayment(loanId, repaymentUpdate);
     }
 
     function _update(address to, uint256 tokenId, address auth) internal virtual override returns (address from) {
