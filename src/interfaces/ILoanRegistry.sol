@@ -26,6 +26,7 @@ interface ILoanRegistry {
     }
 
     struct MutableLoanData {
+        uint256 nextRepaymentId;
         LoanStatus status;
         ClosureReason closureReason;
         RepaymentData repaymentData;
@@ -43,4 +44,10 @@ interface ILoanRegistry {
         uint256 perfFee;
         uint256 oetAlloc;
     }
+
+    function markMinted(uint256 loanId, uint256 repaymentId) external;
+
+    function repaymentData(uint256 loanId, uint256 repaymentId) external view returns (RepaymentData memory);
+
+    function canYieldBeMinted(uint256 loanId, uint256 repaymentId) external view returns (bool);
 }

@@ -20,21 +20,21 @@ contract Deploy is Script {
 
         address accessManager = (new DeployAccessManager(tag)).deployPlain();
         (address whitelistRegistryProxy,) = (new DeployWhitelistRegistry(tag)).deployUpgradeable();
+        (address loanRegistry,) = (new DeployLoanRegistry(tag)).deployUpgradeable();
         (address pipelineUSDProxy,) = (new DeployPipelineUSD(tag)).deployUpgradeable();
         (address stakedPipelineUSDProxy,) = (new DeployStakedPipelineUSD(tag)).deployUpgradeable();
         address yieldMinter = (new DeployYieldMinter(tag)).deployPlain();
         (address depositManager,) = (new DeployDepositManager(tag)).deployUpgradeable();
         (address withdrawalQueue,) = (new DeployWithdrawalQueue(tag)).deployUpgradeable();
-        (address loanRegistry,) = (new DeployLoanRegistry(tag)).deployUpgradeable();
 
         console.log("=== Done");
         console.log("AccessManager: ", accessManager);
         console.log("WhitelistRegistry: ", whitelistRegistryProxy);
+        console.log("LoanRegistry: ", loanRegistry);
         console.log("PipelineUSD: ", pipelineUSDProxy);
         console.log("StakedPipelineUSD: ", stakedPipelineUSDProxy);
         console.log("YieldMinter: ", yieldMinter);
         console.log("DepositManager: ", depositManager);
         console.log("WithdrawalQueue: ", withdrawalQueue);
-        console.log("LoanRegistry: ", loanRegistry);
     }
 }

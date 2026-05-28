@@ -44,8 +44,12 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
         _updateLocation(loanId, newLocation);
     }
 
-    function recordPayment(uint256 loanId, RepaymentData calldata repaymentData) external restricted {
-        _recordPayment(loanId, repaymentData);
+    function recordPayment(uint256 loanId, RepaymentData calldata repaymentData)
+        external
+        restricted
+        returns (uint256 repaymentId)
+    {
+        return _recordPayment(loanId, repaymentData);
     }
 
     function setDefault(uint256 loanId, uint32 ccrBps) external restricted {
@@ -54,6 +58,10 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
 
     function closeLoan(uint256 loanId, ClosureReason reason) external restricted {
         _closeLoan(loanId, reason);
+    }
+
+    function markMinted(uint256 loanId, uint256 repaymentId) external restricted {
+        _markMinted(loanId, repaymentId);
     }
 
     function pause() external restricted {

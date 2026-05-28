@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.34;
 
-import {PipelineYieldMinterV1} from "../src/PipelineYieldMinterV1.sol";
+import {PipelineYieldMinter} from "../src/PipelineYieldMinter.sol";
+import {ILoanRegistry} from "../src/interfaces/ILoanRegistry.sol";
+import {LoanRegistryUpgradeable} from "../src/loanRegistry/LoanRegistryUpgradeable.sol";
 
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 
@@ -11,71 +13,76 @@ contract PipelineYieldMinterTest is PipelineTestSetUp {
 
         vm.prank(whitelistAdmin);
         whitelistRegistry.allow(address(sPlUsd));
+
+        vm.prank(whitelistAdmin);
+        whitelistRegistry.allow(address(treasury));
     }
 
     function test_setUp() public view {
         assertEq(yieldMinter.authority(), address(authority));
-        assertEq(yieldMinter.mintAuthority(), yieldMinterAuthority);
+        assertEq(address(yieldMinter.loanRegistry()), address(loanRegistry));
         assertEq(yieldMinter.stakedPlUsd(), address(sPlUsd));
         assertEq(address(yieldMinter.plUsd()), address(plUsd));
+        assertEq(yieldMinter.treasury(), treasury);
     }
 
-    function test_mintYield(uint256 amount) public {
-        vm.assume(amount != 0);
-
+    function test_mintYield() public {
+        (uint256 loanId, uint256 repaymentId) = _setUpDefaultLoanAndPayment();
         uint256 totalAssetsBefore = sPlUsd.totalAssets();
-
-        uint256 nonce = yieldMinter.nextNonce();
-        bytes memory signature = _createSignature(amount, nonce, yieldMinterAuthorityPrivateKey);
+        uint256 treasuryBalanceBefore = plUsd.balanceOf(treasury);
 
         vm.prank(yieldMinterManager);
-        yieldMinter.mintYield(amount, signature);
+        yieldMinter.mintYield(loanId, loanId);
 
-        assertEq(sPlUsd.totalAssets(), totalAssetsBefore + amount);
-        assertEq(yieldMinter.nextNonce(), nonce + 1);
+        ILoanRegistry.RepaymentData memory repayment = loanRegistry.repaymentData(loanId, repaymentId);
+        uint256 sPlUsdAmount = repayment.seniorInterest;
+        uint256 treasuryAmount = repayment.mgmtFee + repayment.perfFee + repayment.oetAlloc;
 
-        // replay revert assertion
-        vm.prank(yieldMinterManager);
-        vm.expectPartialRevert(PipelineYieldMinterV1.PipelineYieldMinterV1UnauthorizedSigner.selector);
-        yieldMinter.mintYield(amount, signature);
-    }
-
-    function test_wrongSigner(uint256 wrongSignerPk) public {
-        vm.assume(
-            wrongSignerPk != yieldMinterAuthorityPrivateKey && wrongSignerPk != 0 && wrongSignerPk < SECP256K1_ORDER
-        );
-
-        bytes memory wrongSignature = _createSignature(1_000_000_000_000, yieldMinter.nextNonce(), wrongSignerPk);
+        assertEq(sPlUsd.totalAssets(), totalAssetsBefore + sPlUsdAmount);
+        assertEq(plUsd.balanceOf(treasury), treasuryBalanceBefore + treasuryAmount);
 
         vm.prank(yieldMinterManager);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                PipelineYieldMinterV1.PipelineYieldMinterV1UnauthorizedSigner.selector, vm.addr(wrongSignerPk)
-            )
+            abi.encodeWithSelector(PipelineYieldMinter.YieldMinterForbiddenMint.selector, loanId, repaymentId)
         );
-        yieldMinter.mintYield(1_000_000_000_000, wrongSignature);
+        yieldMinter.mintYield(loanId, loanId);
+
+        vm.prank(address(yieldMinter));
+        vm.expectRevert(
+            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryAlreadyMinted.selector, loanId, repaymentId)
+        );
+        loanRegistry.markMinted(0, 0);
     }
 
-    function test_zeroAmountRevert() public {
-        uint256 nonce = yieldMinter.nextNonce();
-        bytes memory signature = _createSignature(0, nonce, yieldMinterAuthorityPrivateKey);
+    function _setUpDefaultLoanAndPayment() private returns (uint256 loanId, uint256 repaymentId) {
+        string memory defaultMetadataURI = "defaultMetadataURI";
 
-        vm.prank(yieldMinterManager);
-        vm.expectRevert(abi.encodeWithSelector(PipelineYieldMinterV1.PipelineYieldMinterV1ZeroAmount.selector));
-        yieldMinter.mintYield(0, signature);
-    }
+        ILoanRegistry.ImmutableLoanData memory loanData = ILoanRegistry.ImmutableLoanData({
+            seniorTranche: 1_000_000_000,
+            equityTranche: 1_000_000,
+            offtakerPrice: 2_000_000,
+            rateBps: 1_000_000,
+            originationTimestamp: uint128(block.timestamp),
+            originalMaturityTimestamp: uint128(block.timestamp + 100),
+            facility: "facility"
+        });
 
-    function _createSignature(uint256 yieldAmount, uint256 nonce, uint256 privateKey)
-        internal
-        view
-        returns (bytes memory signature)
-    {
-        bytes32 structHash = keccak256(abi.encode(yieldMinter.YIELD_MINT_TYPEHASH(), yieldAmount, nonce));
+        address loanOwner = makeAddr("loanOwner");
 
-        bytes32 domainSeparator = yieldMinter.domainSeparator();
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+        vm.prank(loanRegistryManager);
+        loanId = loanRegistry.drawLoan(loanOwner, defaultMetadataURI, loanData, 1_000_000, "location");
 
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        return abi.encodePacked(r, s, v);
+        ILoanRegistry.RepaymentData memory repayment = ILoanRegistry.RepaymentData({
+            offtakerAmount: 1_000_000_000_000_000,
+            equityDistributed: 1_000_000_000_000,
+            seniorPrincipalRepaid: 2_000_000_000_000,
+            seniorInterest: 3_000_000_000_000,
+            mgmtFee: 4_000_000_000_000,
+            perfFee: 5_000_000_000_000,
+            oetAlloc: 6_000_000_000_000
+        });
+
+        vm.prank(loanRegistryManager);
+        repaymentId = loanRegistry.recordPayment(loanId, repayment);
     }
 }

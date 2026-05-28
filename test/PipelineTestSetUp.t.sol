@@ -13,7 +13,7 @@ import {WhitelistRegistry} from "../src/WhitelistRegistry.sol";
 import {PipelineDepositManager} from "../src/PipelineDepositManager.sol";
 import {PipelineWithdrawalQueue} from "../src/PipelineWithdrawalQueue.sol";
 import {PipelineLoanRegistry} from "../src/PipelineLoanRegistry.sol";
-import {PipelineYieldMinterV1} from "../src/PipelineYieldMinterV1.sol";
+import {PipelineYieldMinter} from "../src/PipelineYieldMinter.sol";
 
 import {WhitelistAccessUpgradeable} from "../src/whitelist/WhitelistAccessUpgradeable.sol";
 import {DepositManagerUpgradeable} from "../src/depositManager/DepositManagerUpgradeable.sol";
@@ -29,13 +29,12 @@ contract PipelineTestSetUp is Test {
     WhitelistRegistry public whitelistRegistry;
     PipelineUSD public plUsd;
     StakedPipelineUSD public sPlUsd;
-    PipelineYieldMinterV1 public yieldMinter;
+    PipelineYieldMinter public yieldMinter;
     PipelineDepositManager public depositManager;
     PipelineWithdrawalQueue public withdrawalQueue;
     PipelineLoanRegistry public loanRegistry;
     USDCMock public usdc = new USDCMock();
 
-    uint256 yieldMinterAuthorityPrivateKey = uint256(bytes32("yieldMinterAuthority"));
     uint256 depositVerifierPrivateKey = uint256(bytes32("depositVerifier"));
     uint256 withdrawalVerifierPrivateKey = uint256(bytes32("withdrawalVerifier"));
 
@@ -43,7 +42,6 @@ contract PipelineTestSetUp is Test {
     address public upgrader = makeAddr("upgrader");
     address public pauser = makeAddr("pauser");
     address public whitelistAdmin = makeAddr("whitelistAdmin");
-    address public yieldMinterAuthority = vm.addr(yieldMinterAuthorityPrivateKey);
     address public yieldMinterManager = makeAddr("yieldMinterManager");
     address public depositManagerAdmin = makeAddr("depositManagerAdmin");
     address public depositVerifier = vm.addr(depositVerifierPrivateKey);
@@ -52,6 +50,7 @@ contract PipelineTestSetUp is Test {
     address public loanRegistryManager = makeAddr("loanRegistryManager");
     address public custodian = makeAddr("custodian");
     address public tokenHolder = makeAddr("tokenHolder");
+    address public treasury = makeAddr("treasury");
 
     uint256 minDeposit = 1_000_000_000;
     RateLimiterUpgradeable.RateLimitConfig public rateLimitConfigDefault = RateLimiterUpgradeable.RateLimitConfig({
@@ -63,8 +62,8 @@ contract PipelineTestSetUp is Test {
         _setUpWhitelistRegistry();
         _setUpPlUsd();
         _setUpSPlUsd();
-        _setUpYieldMinter();
         _setupLoanRegistry();
+        _setUpYieldMinter();
 
         _setUpYieldMinterManager();
         _setUpPauser();
@@ -104,7 +103,7 @@ contract PipelineTestSetUp is Test {
     }
 
     function _setUpYieldMinter() private {
-        yieldMinter = new PipelineYieldMinterV1(address(authority), yieldMinterAuthority, address(sPlUsd));
+        yieldMinter = new PipelineYieldMinter(address(authority), address(sPlUsd), address(loanRegistry), treasury);
         uint64 roleId = uint64(bytes8(keccak256("MINTER")));
 
         vm.prank(admin);
@@ -185,7 +184,7 @@ contract PipelineTestSetUp is Test {
         authority.grantRole(roleId, yieldMinterManager, 0);
 
         bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = PipelineYieldMinterV1.mintYield.selector;
+        selectors[0] = PipelineYieldMinter.mintYield.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(yieldMinter), selectors, roleId);
@@ -306,6 +305,17 @@ contract PipelineTestSetUp is Test {
         selectors[6] = PipelineLoanRegistry.recordPayment.selector;
         selectors[7] = PipelineLoanRegistry.pause.selector;
         selectors[8] = PipelineLoanRegistry.unpause.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(loanRegistry), selectors, roleId);
+
+        selectors = new bytes4[](1);
+        selectors[0] = PipelineLoanRegistry.markMinted.selector;
+
+        roleId = uint64(bytes8(keccak256("YIELD_MINTER_ROLE")));
+
+        vm.prank(admin);
+        authority.grantRole(roleId, address(yieldMinter), 0);
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(loanRegistry), selectors, roleId);

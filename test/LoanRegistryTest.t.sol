@@ -328,9 +328,13 @@ contract LoanRegistryTest is PipelineTestSetUp {
     }
 
     function test_recordPayment() public {
+        assert(!loanRegistry.canYieldBeMinted(loanRegistry.nextLoanId(), 0));
         uint256 loanId = _drawDefaultLoan(makeAddr("loanOwner"));
 
-        ILoanRegistry.RepaymentData memory repaymentDataBefore = loanRegistry.repaymentData(loanId);
+        ILoanRegistry.RepaymentData memory repaymentDataBefore = loanRegistry.cumulativeRepaymentData(loanId);
+        uint256 nextRepaymentIdBefore = loanRegistry.mutableLoanData(loanId).nextRepaymentId;
+
+        assert(!loanRegistry.canYieldBeMinted(loanId, nextRepaymentIdBefore));
 
         ILoanRegistry.RepaymentData memory repayment = ILoanRegistry.RepaymentData({
             offtakerAmount: 1_000_000_000_000_000,
@@ -343,22 +347,59 @@ contract LoanRegistryTest is PipelineTestSetUp {
         });
 
         vm.prank(loanRegistryManager);
-        loanRegistry.recordPayment(loanId, repayment);
+        uint256 repaymentId = loanRegistry.recordPayment(loanId, repayment);
 
-        ILoanRegistry.RepaymentData memory repaymentDataAfter = loanRegistry.repaymentData(loanId);
+        assertEq(repaymentId, nextRepaymentIdBefore);
+        assertEq(loanRegistry.mutableLoanData(loanId).nextRepaymentId, repaymentId + 1);
+        assert(loanRegistry.canYieldBeMinted(loanId, repaymentId));
 
-        assertEq(repaymentDataAfter.offtakerAmount, repaymentDataBefore.offtakerAmount + repayment.offtakerAmount);
+        ILoanRegistry.RepaymentData memory cumulativeRepaymentDataAfter = loanRegistry.cumulativeRepaymentData(loanId);
+
         assertEq(
-            repaymentDataAfter.seniorPrincipalRepaid,
+            cumulativeRepaymentDataAfter.offtakerAmount, repaymentDataBefore.offtakerAmount + repayment.offtakerAmount
+        );
+        assertEq(
+            cumulativeRepaymentDataAfter.seniorPrincipalRepaid,
             repaymentDataBefore.seniorPrincipalRepaid + repayment.seniorPrincipalRepaid
         );
-        assertEq(repaymentDataAfter.seniorInterest, repaymentDataBefore.seniorInterest + repayment.seniorInterest);
         assertEq(
-            repaymentDataAfter.equityDistributed, repaymentDataBefore.equityDistributed + repayment.equityDistributed
+            cumulativeRepaymentDataAfter.seniorInterest, repaymentDataBefore.seniorInterest + repayment.seniorInterest
         );
-        assertEq(repaymentDataAfter.mgmtFee, repaymentDataBefore.mgmtFee + repayment.mgmtFee);
-        assertEq(repaymentDataAfter.perfFee, repaymentDataBefore.perfFee + repayment.perfFee);
-        assertEq(repaymentDataAfter.oetAlloc, repaymentDataBefore.oetAlloc + repayment.oetAlloc);
+        assertEq(
+            cumulativeRepaymentDataAfter.equityDistributed,
+            repaymentDataBefore.equityDistributed + repayment.equityDistributed
+        );
+        assertEq(cumulativeRepaymentDataAfter.mgmtFee, repaymentDataBefore.mgmtFee + repayment.mgmtFee);
+        assertEq(cumulativeRepaymentDataAfter.perfFee, repaymentDataBefore.perfFee + repayment.perfFee);
+        assertEq(cumulativeRepaymentDataAfter.oetAlloc, repaymentDataBefore.oetAlloc + repayment.oetAlloc);
+
+        ILoanRegistry.RepaymentData memory repaymentData = loanRegistry.repaymentData(loanId, repaymentId);
+
+        assertEq(repaymentData.offtakerAmount, repayment.offtakerAmount);
+        assertEq(repaymentData.seniorPrincipalRepaid, repayment.seniorPrincipalRepaid);
+        assertEq(repaymentData.seniorInterest, repayment.seniorInterest);
+        assertEq(repaymentData.equityDistributed, repayment.equityDistributed);
+        assertEq(repaymentData.mgmtFee, repayment.mgmtFee);
+        assertEq(repaymentData.perfFee, repayment.perfFee);
+        assertEq(repaymentData.oetAlloc, repayment.oetAlloc);
+    }
+
+    function test_markMintedReverts() public {
+        uint256 nextLoadId = loanRegistry.nextLoanId();
+
+        vm.prank(address(yieldMinter));
+        vm.expectRevert(
+            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, nextLoadId)
+        );
+        loanRegistry.markMinted(nextLoadId, 0);
+
+        _drawDefaultLoan(makeAddr("loanOwner"));
+
+        vm.prank(address(yieldMinter));
+        vm.expectRevert(
+            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentRepayment.selector, nextLoadId, 0)
+        );
+        loanRegistry.markMinted(nextLoadId, 0);
     }
 
     function test_recordPaymentWrongData() public {

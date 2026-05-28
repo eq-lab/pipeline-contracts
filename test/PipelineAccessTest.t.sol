@@ -76,7 +76,7 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.assume(caller != yieldMinterManager);
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        yieldMinter.mintYield(1, "");
+        yieldMinter.mintYield(1, 1);
     }
 
     function testFuzz_depositManagerAccess(address caller) public {
@@ -187,5 +187,13 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         loanRegistry.unpause();
+    }
+
+    function testFuzz_markMintedAccess(address caller) public {
+        vm.assume(caller != address(yieldMinter));
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        loanRegistry.markMinted(0, 0);
     }
 }
