@@ -18,9 +18,9 @@ contract SetupLoanRegistryManager is Script, Deployments {
 
         bytes4[] memory selectors = new bytes4[](7);
         selectors[0] = PipelineLoanRegistry.drawLoan.selector;
-        selectors[1] = PipelineLoanRegistry.updateStatus.selector;
-        selectors[2] = PipelineLoanRegistry.updateCCR.selector;
-        selectors[3] = PipelineLoanRegistry.updateLocation.selector;
+        selectors[1] = PipelineLoanRegistry.updateMutable.selector;
+        selectors[2] = PipelineLoanRegistry.rollover.selector;
+        selectors[3] = PipelineLoanRegistry.amendEconomics.selector;
         selectors[4] = PipelineLoanRegistry.setDefault.selector;
         selectors[5] = PipelineLoanRegistry.closeLoan.selector;
         selectors[6] = PipelineLoanRegistry.recordPayment.selector;

@@ -19,19 +19,25 @@ contract LoanRegistryTest is PipelineTestSetUp {
         address loanOwner = makeAddr("loanOwner");
         string memory metadataURI = "test_drawLoan_metadataURI";
         uint64 initialMaturity = uint64(block.timestamp + 100);
-        string memory location = "location";
         uint32 initialCcrBps = 1_000_000;
 
         uint256 nextLoanId = loanRegistry.nextLoanId();
 
         ILoanRegistry.ImmutableLoanData memory loanData = ILoanRegistry.ImmutableLoanData({
-            seniorTranche: 1_000_000_000,
-            equityTranche: 1_000_000,
-            offtakerPrice: 2_000_000,
-            rateBps: 1_000_000,
-            originationTimestamp: uint128(block.timestamp),
-            originalMaturityTimestamp: uint128(block.timestamp + 100),
-            facility: "facility"
+            originalFacilitySize: 1_000_000_000,
+            originalSeniorTranche: 1_000_000,
+            originalEquityTranche: 2_000_000,
+            originalOfftakerPrice: 3_000_000,
+            seniorInterestRateBps: 1_000_000,
+            originationDate: uint64(block.timestamp),
+            originalMaturityDate: uint64(block.timestamp + 100)
+        });
+
+        ILoanRegistry.LocationUpdate memory location = ILoanRegistry.LocationUpdate({
+            locationType: ILoanRegistry.LocationType.Vessel,
+            locationIdentifier: "locationIdentifier",
+            trackingURL: "trackingURL",
+            updatedAt: uint64(block.timestamp)
         });
 
         vm.prank(loanRegistryManager);
@@ -43,183 +49,24 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(loanRegistry.tokenURI(loanId), metadataURI);
 
         ILoanRegistry.ImmutableLoanData memory immutableLoanData = loanRegistry.immutableLoanData(loanId);
-        assertEq(immutableLoanData.seniorTranche, loanData.seniorTranche);
-        assertEq(immutableLoanData.equityTranche, loanData.equityTranche);
-        assertEq(immutableLoanData.offtakerPrice, loanData.offtakerPrice);
-        assertEq(immutableLoanData.rateBps, loanData.rateBps);
-        assertEq(immutableLoanData.originationTimestamp, loanData.originationTimestamp);
-        assertEq(immutableLoanData.originalMaturityTimestamp, loanData.originalMaturityTimestamp);
-        assertEq(immutableLoanData.facility, loanData.facility);
+        assertEq(immutableLoanData.originalFacilitySize, loanData.originalFacilitySize);
+        assertEq(immutableLoanData.originalSeniorTranche, loanData.originalSeniorTranche);
+        assertEq(immutableLoanData.originalEquityTranche, loanData.originalEquityTranche);
+        assertEq(immutableLoanData.originalOfftakerPrice, loanData.originalOfftakerPrice);
+        assertEq(immutableLoanData.seniorInterestRateBps, loanData.seniorInterestRateBps);
+        assertEq(immutableLoanData.originationDate, loanData.originationDate);
+        assertEq(immutableLoanData.originalMaturityDate, loanData.originalMaturityDate);
 
         ILoanRegistry.MutableLoanData memory mutableLoanData = loanRegistry.mutableLoanData(loanId);
         assertEq(uint256(mutableLoanData.status), uint256(ILoanRegistry.LoanStatus.Performing));
         assertEq(mutableLoanData.ccrBps, initialCcrBps);
-        assertEq(mutableLoanData.currentMaturityDate, initialMaturity);
-        assertEq(mutableLoanData.location, location);
+        assertEq(mutableLoanData.currentMaturityTimestamp, initialMaturity);
         assertEq(uint256(mutableLoanData.closureReason), uint256(ILoanRegistry.ClosureReason.None));
-    }
 
-    function test_updateStatus() public {
-        uint256 loanId = _drawDefaultLoan(makeAddr("loanOwner"));
-
-        ILoanRegistry.MutableLoanData memory mutableDataBefore = loanRegistry.mutableLoanData(loanId);
-
-        ILoanRegistry.LoanStatus newStatus = ILoanRegistry.LoanStatus.WatchList;
-        assertNotEq(uint256(mutableDataBefore.status), uint256(newStatus));
-
-        vm.prank(loanRegistryManager);
-        loanRegistry.updateStatus(loanId, newStatus);
-
-        ILoanRegistry.MutableLoanData memory mutableLoanData = loanRegistry.mutableLoanData(loanId);
-        assertEq(uint256(mutableLoanData.status), uint256(newStatus));
-        assertEq(mutableLoanData.ccrBps, mutableDataBefore.ccrBps);
-        assertEq(mutableLoanData.location, mutableDataBefore.location);
-        assertEq(mutableLoanData.currentMaturityDate, mutableDataBefore.currentMaturityDate);
-        assertEq(uint256(mutableLoanData.closureReason), uint256(mutableDataBefore.closureReason));
-    }
-
-    function test_updateStatusReverts() public {
-        uint256 loanId = _drawDefaultLoan(makeAddr("loanOwner"));
-
-        ILoanRegistry.MutableLoanData memory mutableDataBefore = loanRegistry.mutableLoanData(loanId);
-
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, loanId + 1)
-        );
-        loanRegistry.updateStatus(loanId + 1, mutableDataBefore.status);
-
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryInapplicableStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Default
-            )
-        );
-        loanRegistry.updateStatus(loanId, ILoanRegistry.LoanStatus.Default);
-
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryInapplicableStatus.selector, loanId, ILoanRegistry.LoanStatus.Closed
-            )
-        );
-        loanRegistry.updateStatus(loanId, ILoanRegistry.LoanStatus.Closed);
-
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistrySameStatus.selector, loanId));
-        loanRegistry.updateStatus(loanId, mutableDataBefore.status);
-
-        vm.prank(loanRegistryManager);
-        loanRegistry.setDefault(loanId, 0);
-
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Default
-            )
-        );
-        loanRegistry.updateStatus(loanId, mutableDataBefore.status);
-
-        loanId = _drawDefaultLoan(makeAddr("loanOwner"));
-
-        vm.prank(loanRegistryManager);
-        loanRegistry.closeLoan(loanId, ILoanRegistry.ClosureReason.EarlyRepayment);
-
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, loanId, ILoanRegistry.LoanStatus.Closed
-            )
-        );
-        loanRegistry.updateStatus(loanId, mutableDataBefore.status);
-    }
-
-    function test_updateCCR() public {
-        uint256 loanId = _drawDefaultLoan(makeAddr("loanOwner"));
-
-        ILoanRegistry.MutableLoanData memory mutableDataBefore = loanRegistry.mutableLoanData(loanId);
-
-        uint32 newCcrBps = 1;
-        assertNotEq(mutableDataBefore.ccrBps, newCcrBps);
-
-        vm.prank(loanRegistryManager);
-        loanRegistry.updateCCR(loanId, newCcrBps);
-
-        ILoanRegistry.MutableLoanData memory mutableLoanData = loanRegistry.mutableLoanData(loanId);
-        assertEq(uint256(mutableLoanData.status), uint256(mutableDataBefore.status));
-        assertEq(mutableLoanData.ccrBps, newCcrBps);
-        assertEq(mutableLoanData.location, mutableDataBefore.location);
-        assertEq(mutableLoanData.currentMaturityDate, mutableDataBefore.currentMaturityDate);
-        assertEq(uint256(mutableLoanData.closureReason), uint256(mutableDataBefore.closureReason));
-    }
-
-    function test_updateCCRReverts() public {
-        uint256 loanId = _drawDefaultLoan(makeAddr("loanOwner"));
-
-        ILoanRegistry.MutableLoanData memory mutableDataBefore = loanRegistry.mutableLoanData(loanId);
-
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, loanId + 1)
-        );
-        loanRegistry.updateCCR(loanId + 1, mutableDataBefore.ccrBps + 1);
-
-        vm.prank(loanRegistryManager);
-        loanRegistry.closeLoan(loanId, ILoanRegistry.ClosureReason.EarlyRepayment);
-
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, loanId, ILoanRegistry.LoanStatus.Closed
-            )
-        );
-        loanRegistry.updateCCR(loanId, mutableDataBefore.ccrBps + 1);
-    }
-
-    function test_updateLocation() public {
-        uint256 loanId = _drawDefaultLoan(makeAddr("loanOwner"));
-
-        ILoanRegistry.MutableLoanData memory mutableDataBefore = loanRegistry.mutableLoanData(loanId);
-
-        string memory newLocation = "newLocation";
-        assertNotEq(mutableDataBefore.location, newLocation);
-
-        vm.prank(loanRegistryManager);
-        loanRegistry.updateLocation(loanId, newLocation);
-
-        ILoanRegistry.MutableLoanData memory mutableLoanData = loanRegistry.mutableLoanData(loanId);
-        assertEq(uint256(mutableLoanData.status), uint256(mutableDataBefore.status));
-        assertEq(mutableLoanData.ccrBps, mutableDataBefore.ccrBps);
-        assertEq(mutableLoanData.location, newLocation);
-        assertEq(mutableLoanData.currentMaturityDate, mutableDataBefore.currentMaturityDate);
-        assertEq(uint256(mutableLoanData.closureReason), uint256(mutableDataBefore.closureReason));
-    }
-
-    function test_updateLocationReverts() public {
-        uint256 loanId = _drawDefaultLoan(makeAddr("loanOwner"));
-
-        string memory newLocation = "newLocation";
-
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, loanId + 1)
-        );
-        loanRegistry.updateLocation(loanId + 1, newLocation);
-
-        vm.prank(loanRegistryManager);
-        loanRegistry.closeLoan(loanId, ILoanRegistry.ClosureReason.EarlyRepayment);
-
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, loanId, ILoanRegistry.LoanStatus.Closed
-            )
-        );
-        loanRegistry.updateLocation(loanId, newLocation);
+        assertEq(uint8(mutableLoanData.currentLocation.locationType), uint8(location.locationType));
+        assertEq(mutableLoanData.currentLocation.locationIdentifier, location.locationIdentifier);
+        assertEq(mutableLoanData.currentLocation.trackingURL, location.trackingURL);
+        assertEq(mutableLoanData.currentLocation.updatedAt, location.updatedAt);
     }
 
     function test_setDefault() public {
@@ -235,9 +82,17 @@ contract LoanRegistryTest is PipelineTestSetUp {
         ILoanRegistry.MutableLoanData memory mutableLoanData = loanRegistry.mutableLoanData(loanId);
         assertEq(uint256(mutableLoanData.status), uint256(ILoanRegistry.LoanStatus.Default));
         assertEq(mutableLoanData.ccrBps, ccrBps);
-        assertEq(mutableLoanData.location, mutableLoanData.location);
-        assertEq(mutableLoanData.currentMaturityDate, mutableDataBefore.currentMaturityDate);
+        assertEq(mutableLoanData.currentMaturityTimestamp, mutableDataBefore.currentMaturityTimestamp);
         assertEq(uint256(mutableLoanData.closureReason), uint256(mutableDataBefore.closureReason));
+
+        assertEq(
+            uint8(mutableLoanData.currentLocation.locationType), uint8(mutableDataBefore.currentLocation.locationType)
+        );
+        assertEq(
+            mutableLoanData.currentLocation.locationIdentifier, mutableDataBefore.currentLocation.locationIdentifier
+        );
+        assertEq(mutableLoanData.currentLocation.trackingURL, mutableDataBefore.currentLocation.trackingURL);
+        assertEq(mutableLoanData.currentLocation.updatedAt, mutableDataBefore.currentLocation.updatedAt);
     }
 
     function test_setDefaultReverts() public {
@@ -269,13 +124,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         loanRegistry.closeLoan(loanId, ILoanRegistry.ClosureReason.EarlyRepayment);
 
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, loanId, ILoanRegistry.LoanStatus.Closed
-            )
-        );
-        loanRegistry.updateStatus(loanId, mutableDataBefore.status);
+        // TODO: updateMutableData
     }
 
     function test_closeLoan() public {
@@ -290,9 +139,17 @@ contract LoanRegistryTest is PipelineTestSetUp {
         ILoanRegistry.MutableLoanData memory mutableLoanData = loanRegistry.mutableLoanData(loanId);
         assertEq(uint256(mutableLoanData.status), uint256(ILoanRegistry.LoanStatus.Closed));
         assertEq(mutableLoanData.ccrBps, mutableDataBefore.ccrBps);
-        assertEq(mutableLoanData.location, mutableLoanData.location);
-        assertEq(mutableLoanData.currentMaturityDate, mutableDataBefore.currentMaturityDate);
+        assertEq(mutableLoanData.currentMaturityTimestamp, mutableDataBefore.currentMaturityTimestamp);
         assertEq(uint256(mutableLoanData.closureReason), uint256(closureReason));
+
+        assertEq(
+            uint8(mutableLoanData.currentLocation.locationType), uint8(mutableDataBefore.currentLocation.locationType)
+        );
+        assertEq(
+            mutableLoanData.currentLocation.locationIdentifier, mutableDataBefore.currentLocation.locationIdentifier
+        );
+        assertEq(mutableLoanData.currentLocation.trackingURL, mutableDataBefore.currentLocation.trackingURL);
+        assertEq(mutableLoanData.currentLocation.updatedAt, mutableDataBefore.currentLocation.updatedAt);
     }
 
     function test_closeLoanReverts() public {
@@ -337,7 +194,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assert(!loanRegistry.canYieldBeMinted(loanId, nextRepaymentIdBefore));
 
         ILoanRegistry.RepaymentData memory repayment = ILoanRegistry.RepaymentData({
-            offtakerAmount: 1_000_000_000_000_000,
+            offtakerReceived: 1_000_000_000_000_000,
             equityDistributed: 1_000_000_000_000,
             seniorPrincipalRepaid: 2_000_000_000_000,
             seniorInterest: 3_000_000_000_000,
@@ -356,7 +213,8 @@ contract LoanRegistryTest is PipelineTestSetUp {
         ILoanRegistry.RepaymentData memory cumulativeRepaymentDataAfter = loanRegistry.cumulativeRepaymentData(loanId);
 
         assertEq(
-            cumulativeRepaymentDataAfter.offtakerAmount, repaymentDataBefore.offtakerAmount + repayment.offtakerAmount
+            cumulativeRepaymentDataAfter.offtakerReceived,
+            repaymentDataBefore.offtakerReceived + repayment.offtakerReceived
         );
         assertEq(
             cumulativeRepaymentDataAfter.seniorPrincipalRepaid,
@@ -375,7 +233,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
         ILoanRegistry.RepaymentData memory repaymentData = loanRegistry.repaymentData(loanId, repaymentId);
 
-        assertEq(repaymentData.offtakerAmount, repayment.offtakerAmount);
+        assertEq(repaymentData.offtakerReceived, repayment.offtakerReceived);
         assertEq(repaymentData.seniorPrincipalRepaid, repayment.seniorPrincipalRepaid);
         assertEq(repaymentData.seniorInterest, repayment.seniorInterest);
         assertEq(repaymentData.equityDistributed, repayment.equityDistributed);
@@ -404,7 +262,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
     function test_recordPaymentWrongData() public {
         ILoanRegistry.RepaymentData memory repayment = ILoanRegistry.RepaymentData({
-            offtakerAmount: 1_000_000,
+            offtakerReceived: 1_000_000,
             equityDistributed: 1_000_000_000_000,
             seniorPrincipalRepaid: 2_000_000_000_000,
             seniorInterest: 3_000_000_000_000,
@@ -414,7 +272,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         });
 
         assert(
-            repayment.offtakerAmount
+            repayment.offtakerReceived
                 < repayment.equityDistributed + repayment.seniorPrincipalRepaid + repayment.seniorInterest
         );
 
@@ -445,21 +303,12 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assert(loanRegistry.paused());
 
         ILoanRegistry.ImmutableLoanData memory loanData;
+        ILoanRegistry.LocationUpdate memory location;
         vm.prank(loanRegistryManager);
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
-        loanRegistry.drawLoan(loanOwner, "", loanData, 0, "");
+        loanRegistry.drawLoan(loanOwner, "", loanData, 0, location);
 
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
-        loanRegistry.updateStatus(0, ILoanRegistry.LoanStatus.Default);
-
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
-        loanRegistry.updateCCR(0, 0);
-
-        vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
-        loanRegistry.updateLocation(0, "newLocation");
+        // TODO: updateMutableData
 
         vm.prank(loanRegistryManager);
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
@@ -485,16 +334,23 @@ contract LoanRegistryTest is PipelineTestSetUp {
         string memory defaultMetadataURI = "defaultMetadataURI";
 
         ILoanRegistry.ImmutableLoanData memory loanData = ILoanRegistry.ImmutableLoanData({
-            seniorTranche: 1_000_000_000,
-            equityTranche: 1_000_000,
-            offtakerPrice: 2_000_000,
-            rateBps: 1_000_000,
-            originationTimestamp: uint128(block.timestamp),
-            originalMaturityTimestamp: uint128(block.timestamp + 100),
-            facility: "facility"
+            originalFacilitySize: 1_000_000_000,
+            originalSeniorTranche: 1_000_000,
+            originalEquityTranche: 2_000_000,
+            originalOfftakerPrice: 3_000_000,
+            seniorInterestRateBps: 1_000_000,
+            originationDate: uint64(block.timestamp),
+            originalMaturityDate: uint64(block.timestamp + 100)
+        });
+
+        ILoanRegistry.LocationUpdate memory location = ILoanRegistry.LocationUpdate({
+            locationType: ILoanRegistry.LocationType.Vessel,
+            locationIdentifier: "locationIdentifier",
+            trackingURL: "trackingURL",
+            updatedAt: uint64(block.timestamp)
         });
 
         vm.prank(loanRegistryManager);
-        return loanRegistry.drawLoan(to, defaultMetadataURI, loanData, 1_000_000, "location");
+        return loanRegistry.drawLoan(to, defaultMetadataURI, loanData, 1_000_000, location);
     }
 }

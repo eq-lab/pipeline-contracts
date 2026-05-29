@@ -58,22 +58,23 @@ contract PipelineYieldMinterTest is PipelineTestSetUp {
         string memory defaultMetadataURI = "defaultMetadataURI";
 
         ILoanRegistry.ImmutableLoanData memory loanData = ILoanRegistry.ImmutableLoanData({
-            seniorTranche: 1_000_000_000,
-            equityTranche: 1_000_000,
-            offtakerPrice: 2_000_000,
-            rateBps: 1_000_000,
-            originationTimestamp: uint128(block.timestamp),
-            originalMaturityTimestamp: uint128(block.timestamp + 100),
-            facility: "facility"
+            originalFacilitySize: 1_000_000_000,
+            originalSeniorTranche: 1_000_000,
+            originalEquityTranche: 2_000_000,
+            originalOfftakerPrice: 3_000_000,
+            seniorInterestRateBps: 1_000_000,
+            originationDate: uint64(block.timestamp),
+            originalMaturityDate: uint64(block.timestamp + 100)
         });
 
         address loanOwner = makeAddr("loanOwner");
+        ILoanRegistry.LocationUpdate memory location;
 
         vm.prank(loanRegistryManager);
-        loanId = loanRegistry.drawLoan(loanOwner, defaultMetadataURI, loanData, 1_000_000, "location");
+        loanId = loanRegistry.drawLoan(loanOwner, defaultMetadataURI, loanData, 1_000_000, location);
 
         ILoanRegistry.RepaymentData memory repayment = ILoanRegistry.RepaymentData({
-            offtakerAmount: 1_000_000_000_000_000,
+            offtakerReceived: 1_000_000_000_000_000,
             equityDistributed: 1_000_000_000_000,
             seniorPrincipalRepaid: 2_000_000_000_000,
             seniorInterest: 3_000_000_000_000,

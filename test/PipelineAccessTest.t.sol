@@ -149,22 +149,13 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.assume(caller != loanRegistryManager);
 
         ILoanRegistry.ImmutableLoanData memory loanData;
+        ILoanRegistry.LocationUpdate memory location;
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.drawLoan(caller, "", loanData, 0, "");
+        loanRegistry.drawLoan(caller, "", loanData, 0, location);
 
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.updateStatus(0, ILoanRegistry.LoanStatus.WatchList);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.updateCCR(0, 0);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.updateLocation(0, "");
+        // TODO: updateMutableData
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
