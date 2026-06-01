@@ -101,6 +101,7 @@ interface ILoanRegistry {
     function markMinted(uint256 loanId, uint256 repaymentId) external;
 
     function repaymentData(uint256 loanId, uint256 repaymentId) external view returns (RepaymentData memory);
+    function economicsEpoch(uint256 loanId, uint256 epochId) external view returns (EconomicsEpoch memory);
     function canYieldBeMinted(uint256 loanId, uint256 repaymentId) external view returns (bool);
     function maxInterest(uint256 loanId) external view returns (uint256);
 }

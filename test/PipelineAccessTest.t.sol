@@ -155,7 +155,17 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         loanRegistry.drawLoan(caller, "", loanData, 0, location);
 
-        // TODO: updateMutableData
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        loanRegistry.updateMutable(0, "", ILoanRegistry.LoanStatus.Performing, 0, location);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        loanRegistry.rollover(0, 0, 0);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        loanRegistry.amendEconomics(0, 0, 0);
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
