@@ -32,6 +32,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     error LoanRegistryLowCcr();
     error LoanRegistryAlreadyMinted(uint256 loanId, uint256 repaymentId);
     error LoanRegistryNonExistentRepayment(uint256 loanId, uint256 repaymentId);
+    error LoanRegistryInterestExceedsMax(uint256 loanId, uint256 seniorInterest, uint256 maxInterest);
 
     /// @custom:storage-location erc7201:pipeline.storage.LoanRegistry
     struct LoanRegistryStorage {
@@ -83,6 +84,10 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
 
     function repaymentData(uint256 loanId, uint256 repaymentId) external view returns (RepaymentData memory) {
         return _getLoanRegistryStorage().repaymentData[loanId][repaymentId];
+    }
+
+    function maxInterest(uint256 loanId) external view returns (uint256) {
+        return _calculateMaxInterest(loanId);
     }
 
     function canYieldBeMinted(uint256 loanId, uint256 repaymentId) external view returns (bool) {
@@ -178,7 +183,10 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
             revert LoanRegistryWrongCurrentStatus(loanId, $.mutableLoanData[loanId].status);
         }
 
-        if (repaymentUpdate.seniorInterest > _calculateMaxInterest(loanId)) revert();
+        uint256 maxSeniorInterest = _calculateMaxInterest(loanId);
+        if (repaymentUpdate.seniorInterest > maxSeniorInterest) {
+            revert LoanRegistryInterestExceedsMax(loanId, repaymentUpdate.seniorInterest, maxSeniorInterest);
+        }
 
         RepaymentData storage _repaymentData = $.cumulativeRepaymentData[loanId];
 
@@ -340,7 +348,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         uint256 lastEpochInterest = lastEpochInterestMultiplier.mulDiv(
             _immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid, ONE
         );
-        return economicsEpoch.accruedInterest + lastEpochInterest - _cumulativeRepaymentData.seniorPrincipalRepaid;
+        return economicsEpoch.accruedInterest + lastEpochInterest - _cumulativeRepaymentData.seniorInterest;
     }
 
     function _lastEpochInterestMultiplier(uint256 loanId) private view returns (uint256) {

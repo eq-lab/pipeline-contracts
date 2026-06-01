@@ -242,6 +242,64 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(repaymentData.mgmtFee, repayment.mgmtFee);
         assertEq(repaymentData.perfFee, repayment.perfFee);
         assertEq(repaymentData.oetAlloc, repayment.oetAlloc);
+
+        _assertSeniorInterestMaxEdge();
+    }
+
+    function test_recordPaymentSeniorInterest() public {
+        uint256 loanId = _drawDefaultLoan(makeAddr("loanOwner"));
+
+        ILoanRegistry.RepaymentData[3] memory repayments = [
+            ILoanRegistry.RepaymentData({
+                offtakerReceived: 400_000_000,
+                equityDistributed: 10_000_000,
+                seniorPrincipalRepaid: 50_000_000,
+                seniorInterest: 100_000_000,
+                mgmtFee: 1_000_000,
+                perfFee: 2_000_000,
+                oetAlloc: 3_000_000
+            }),
+            ILoanRegistry.RepaymentData({
+                offtakerReceived: 300_000_000,
+                equityDistributed: 20_000_000,
+                seniorPrincipalRepaid: 40_000_000,
+                seniorInterest: 75_000_000,
+                mgmtFee: 1_000_000,
+                perfFee: 2_000_000,
+                oetAlloc: 3_000_000
+            }),
+            ILoanRegistry.RepaymentData({
+                offtakerReceived: 500_000_000,
+                equityDistributed: 30_000_000,
+                seniorPrincipalRepaid: 60_000_000,
+                seniorInterest: 250_000_000,
+                mgmtFee: 1_000_000,
+                perfFee: 2_000_000,
+                oetAlloc: 3_000_000
+            })
+        ];
+
+        uint256 expectedCumulativeSeniorInterest = loanRegistry.cumulativeRepaymentData(loanId).seniorInterest;
+
+        for (uint256 i = 0; i < repayments.length; i++) {
+            vm.warp(block.timestamp + loanRegistry.YEAR() / 4);
+
+            vm.prank(loanRegistryManager);
+            uint256 repaymentId = loanRegistry.recordPayment(loanId, repayments[i]);
+
+            expectedCumulativeSeniorInterest += repayments[i].seniorInterest;
+
+            assertEq(loanRegistry.repaymentData(loanId, repaymentId).seniorInterest, repayments[i].seniorInterest);
+
+            assertEq(loanRegistry.cumulativeRepaymentData(loanId).seniorInterest, expectedCumulativeSeniorInterest);
+        }
+
+        assertEq(
+            loanRegistry.cumulativeRepaymentData(loanId).seniorInterest,
+            repayments[0].seniorInterest + repayments[1].seniorInterest + repayments[2].seniorInterest
+        );
+
+        _assertSeniorInterestMaxEdge();
     }
 
     function test_recordPaymentWrongData() public {
@@ -354,5 +412,34 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
         vm.prank(loanRegistryManager);
         return loanRegistry.drawLoan(to, defaultMetadataURI, loanData, 1_000_000, location);
+    }
+
+    function _assertSeniorInterestMaxEdge() private {
+        uint256 loanId = _drawDefaultLoan(makeAddr("edgeLoanOwner"));
+
+        vm.warp(block.timestamp + loanRegistry.YEAR() / 2);
+
+        uint256 cap = loanRegistry.maxInterest(loanId);
+        assert(cap > 0);
+
+        ILoanRegistry.RepaymentData memory aboveCap;
+        aboveCap.offtakerReceived = cap + 1;
+        aboveCap.seniorInterest = cap + 1;
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                LoanRegistryUpgradeable.LoanRegistryInterestExceedsMax.selector, loanId, cap + 1, cap
+            )
+        );
+        loanRegistry.recordPayment(loanId, aboveCap);
+
+        ILoanRegistry.RepaymentData memory atCap;
+        atCap.offtakerReceived = cap;
+        atCap.seniorInterest = cap;
+
+        vm.prank(loanRegistryManager);
+        uint256 repaymentId = loanRegistry.recordPayment(loanId, atCap);
+        assertEq(loanRegistry.repaymentData(loanId, repaymentId).seniorInterest, cap);
     }
 }

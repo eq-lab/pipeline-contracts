@@ -102,4 +102,5 @@ interface ILoanRegistry {
 
     function repaymentData(uint256 loanId, uint256 repaymentId) external view returns (RepaymentData memory);
     function canYieldBeMinted(uint256 loanId, uint256 repaymentId) external view returns (bool);
+    function maxInterest(uint256 loanId) external view returns (uint256);
 }
