@@ -39,8 +39,7 @@ contract ChainValues {
     function _loadHoodiValues() private {
         values[HOODI_CHAIN_ID]["AccessManagerOwner"] =
             bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
-        values[HOODI_CHAIN_ID]["YieldMintAuthority"] =
-            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODI_CHAIN_ID]["Treasury"] = bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
         values[HOODI_CHAIN_ID]["Custodian"] = bytes32(uint256(uint160(0x0D5367AcD773339653858E73C2023199485FDe6c)));
 
         values[HOODI_CHAIN_ID]["USDC"] = bytes32(uint256(uint160(0xe198F1EEF83Dd613B874FC3c2D5BAf6C8a4A4597)));
@@ -91,8 +90,7 @@ contract ChainValues {
         // Default anvil signers
         values[ANVIL_CHAIN_ID]["AccessManagerOwner"] =
             bytes32(uint256(uint160(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266)));
-        values[ANVIL_CHAIN_ID]["YieldMintAuthority"] =
-            bytes32(uint256(uint160(0x70997970C51812dc3A010C7d01b50e0d17dc79C8)));
+        values[ANVIL_CHAIN_ID]["Treasury"] = bytes32(uint256(uint160(0x70997970C51812dc3A010C7d01b50e0d17dc79C8)));
         values[ANVIL_CHAIN_ID]["Custodian"] = bytes32(uint256(uint160(0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC)));
 
         values[ANVIL_CHAIN_ID]["USDC"] = bytes32(uint256(uint160(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48)));

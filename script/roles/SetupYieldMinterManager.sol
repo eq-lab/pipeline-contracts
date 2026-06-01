@@ -6,7 +6,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {Deployments} from "../base/Deployments.sol";
 
 import {AccessManager} from "@openzeppelin/contracts/access/manager/AccessManager.sol";
-import {PipelineYieldMinterV1} from "../../src/PipelineYieldMinterV1.sol";
+import {PipelineYieldMinter} from "../../src/PipelineYieldMinter.sol";
 
 contract SetupYieldMinterManager is Script, Deployments {
     uint64 constant YIELD_MINTER_MANAGER_ROLE_ID = uint64(bytes8(keccak256("YIELD_MINTER_MANAGER_ROLE")));
@@ -17,9 +17,9 @@ contract SetupYieldMinterManager is Script, Deployments {
         AccessManager accessManager = AccessManager(readPlain("AccessManager"));
 
         bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = PipelineYieldMinterV1.mintYield.selector;
+        selectors[0] = PipelineYieldMinter.mintYield.selector;
 
-        address yieldMinter = readPlain("PipelineYieldMinterV1");
+        address yieldMinter = readPlain("PipelineYieldMinter");
         address roleHolder = address(uint160(uint256(valueOf("YieldMinterManager", false))));
         uint32 delay = uint32(uint256(valueOf("YieldMinterManager__Delay", false)));
 

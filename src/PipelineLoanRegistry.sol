@@ -22,42 +22,52 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
         __LoanRegistry_init(erc721Name, erc721Symbol);
     }
 
-    function mintLoan(address to, string calldata metadataURI, uint64 initialMaturity, string calldata location)
+    function drawLoan(
+        address to,
+        string calldata metadataURI,
+        ImmutableLoanData calldata immutableLoanData,
+        uint32 initialCcr,
+        LocationUpdate calldata location
+    ) external restricted returns (uint256 loanId) {
+        return _drawLoan(to, metadataURI, immutableLoanData, initialCcr, location);
+    }
+
+    function updateMutable(
+        uint256 loanId,
+        string calldata metadataURI,
+        LoanStatus status,
+        uint32 newCCR,
+        LocationUpdate calldata newLocation
+    ) external restricted {
+        _updateMutable(loanId, metadataURI, status, newCCR, newLocation);
+    }
+
+    function recordPayment(uint256 loanId, RepaymentData calldata repaymentData)
         external
         restricted
-        returns (uint256 loanId)
+        returns (uint256 repaymentId)
     {
-        return _mintLoan(to, metadataURI, initialMaturity, location);
+        return _recordPayment(loanId, repaymentData);
     }
 
-    function updateStatus(uint256 loanId, LoanStatus status) external restricted {
-        _updateStatus(loanId, status);
+    function rollover(uint256 loanId, uint32 newRate, uint64 newMaturityDate) external restricted {
+        _rollover(loanId, newRate, newMaturityDate);
     }
 
-    function updateCCR(uint256 loanId, uint32 newCcrBps) external restricted {
-        _updateCCR(loanId, newCcrBps);
+    function amendEconomics(uint256 loanId, uint32 newRate, uint64 newMaturityDate) external restricted {
+        _amendEconomics(loanId, newRate, newMaturityDate);
     }
 
-    function updateLocation(uint256 loanId, string calldata newLocation) external restricted {
-        _updateLocation(loanId, newLocation);
-    }
-
-    function recordPayment(
-        uint256 loanId,
-        uint256 offtakerAmount,
-        uint256 seniorPrincipal,
-        uint256 seniorInterest,
-        uint256 equityAmount
-    ) external restricted {
-        _recordPayment(loanId, offtakerAmount, seniorPrincipal, seniorInterest, equityAmount);
-    }
-
-    function setDefault(uint256 loanId, uint32 ccrBps) external restricted {
-        _setDefault(loanId, ccrBps);
+    function setDefault(uint256 loanId, uint32 ccr) external restricted {
+        _setDefault(loanId, ccr);
     }
 
     function closeLoan(uint256 loanId, ClosureReason reason) external restricted {
         _closeLoan(loanId, reason);
+    }
+
+    function markMinted(uint256 loanId, uint256 repaymentId) external restricted {
+        _markMinted(loanId, repaymentId);
     }
 
     function pause() external restricted {
