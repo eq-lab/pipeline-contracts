@@ -73,11 +73,13 @@ contract PipelineYieldMinterTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         loanId = loanRegistry.drawLoan(loanOwner, defaultMetadataURI, loanData, 1_000_000, location);
 
+        vm.warp(block.timestamp + loanRegistry.YEAR() / 2);
+
         ILoanRegistry.RepaymentData memory repayment = ILoanRegistry.RepaymentData({
             offtakerReceived: 1_000_000_000,
             equityDistributed: 100_000_000,
             seniorPrincipalRepaid: 500_000_000,
-            seniorInterest: 300_000_000,
+            seniorInterest: 250_000_000,
             mgmtFee: 4_000_000,
             perfFee: 5_000_000,
             oetAlloc: 6_000_000

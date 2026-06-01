@@ -199,7 +199,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
             offtakerReceived: 1_000_000_000,
             equityDistributed: 100_000_000,
             seniorPrincipalRepaid: 500_000_000,
-            seniorInterest: 300_000_000,
+            seniorInterest: 250_000_000,
             mgmtFee: 4_000_000,
             perfFee: 5_000_000,
             oetAlloc: 6_000_000
@@ -272,7 +272,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
                 offtakerReceived: 500_000_000,
                 equityDistributed: 30_000_000,
                 seniorPrincipalRepaid: 60_000_000,
-                seniorInterest: 250_000_000,
+                seniorInterest: 200_000_000,
                 mgmtFee: 1_000_000,
                 perfFee: 2_000_000,
                 oetAlloc: 3_000_000
@@ -323,6 +323,57 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryWrongRepaymentData.selector));
         loanRegistry.recordPayment(loanId, repayment);
+    }
+
+    function test_recordPaymentPrincipalExceedsTranche() public {
+        uint256 loanId = _drawDefaultLoan(makeAddr("loanOwner"));
+        uint256 seniorTranche = loanRegistry.immutableLoanData(loanId).originalSeniorTranche;
+
+        ILoanRegistry.RepaymentData memory aboveTranche;
+        aboveTranche.offtakerReceived = seniorTranche + 1;
+        aboveTranche.seniorPrincipalRepaid = seniorTranche + 1;
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                LoanRegistryUpgradeable.LoanRegistryPrincipalExceedsTranche.selector,
+                loanId,
+                seniorTranche + 1,
+                seniorTranche
+            )
+        );
+        loanRegistry.recordPayment(loanId, aboveTranche);
+
+        ILoanRegistry.RepaymentData memory firstHalf;
+        firstHalf.offtakerReceived = seniorTranche / 2;
+        firstHalf.seniorPrincipalRepaid = seniorTranche / 2;
+
+        vm.prank(loanRegistryManager);
+        loanRegistry.recordPayment(loanId, firstHalf);
+
+        ILoanRegistry.RepaymentData memory secondHalf;
+        secondHalf.offtakerReceived = seniorTranche - seniorTranche / 2;
+        secondHalf.seniorPrincipalRepaid = seniorTranche - seniorTranche / 2;
+
+        vm.prank(loanRegistryManager);
+        loanRegistry.recordPayment(loanId, secondHalf);
+
+        assertEq(loanRegistry.cumulativeRepaymentData(loanId).seniorPrincipalRepaid, seniorTranche);
+
+        ILoanRegistry.RepaymentData memory oneMore;
+        oneMore.offtakerReceived = 1;
+        oneMore.seniorPrincipalRepaid = 1;
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                LoanRegistryUpgradeable.LoanRegistryPrincipalExceedsTranche.selector,
+                loanId,
+                seniorTranche + 1,
+                seniorTranche
+            )
+        );
+        loanRegistry.recordPayment(loanId, oneMore);
     }
 
     function test_markMintedReverts() public {

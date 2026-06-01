@@ -33,6 +33,9 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     error LoanRegistryAlreadyMinted(uint256 loanId, uint256 repaymentId);
     error LoanRegistryNonExistentRepayment(uint256 loanId, uint256 repaymentId);
     error LoanRegistryInterestExceedsMax(uint256 loanId, uint256 seniorInterest, uint256 maxInterest);
+    error LoanRegistryPrincipalExceedsTranche(
+        uint256 loanId, uint256 seniorPrincipalRepaid, uint256 originalSeniorTranche
+    );
 
     /// @custom:storage-location erc7201:pipeline.storage.LoanRegistry
     struct LoanRegistryStorage {
@@ -189,6 +192,18 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         }
 
         RepaymentData storage _repaymentData = $.cumulativeRepaymentData[loanId];
+        ImmutableLoanData storage _immutableLoanData = $.immutableLoanData[loanId];
+
+        uint256 cumulativeSeniorPrincipalRepaid =
+            _repaymentData.seniorPrincipalRepaid + repaymentUpdate.seniorPrincipalRepaid;
+        if (cumulativeSeniorPrincipalRepaid > _immutableLoanData.originalSeniorTranche) {
+            revert LoanRegistryPrincipalExceedsTranche(
+                loanId, cumulativeSeniorPrincipalRepaid, _immutableLoanData.originalSeniorTranche
+            );
+        }
+
+        uint256 lastEpochInterest = _lastEpochInterestFactor(loanId)
+            .mulDiv(_immutableLoanData.originalSeniorTranche - _repaymentData.seniorPrincipalRepaid, ONE);
 
         _repaymentData.offtakerReceived += repaymentUpdate.offtakerReceived;
         _repaymentData.equityDistributed += repaymentUpdate.equityDistributed;
@@ -204,13 +219,6 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         unchecked {
             ++$.mutableLoanData[loanId].nextRepaymentId;
         }
-
-        ImmutableLoanData storage _immutableLoanData = $.immutableLoanData[loanId];
-        RepaymentData storage _cumulativeRepaymentData = $.cumulativeRepaymentData[loanId];
-        uint256 interestMultiplier = _lastEpochInterestMultiplier(loanId);
-        uint256 lastEpochInterest = interestMultiplier.mulDiv(
-            _immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid, ONE
-        );
 
         uint256 economicsEpochId = _mutableLoanData.nextEconomicsEpochsId;
         $.economicsEpochs[loanId][economicsEpochId] = EconomicsEpoch({
@@ -242,10 +250,8 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
 
         ImmutableLoanData storage _immutableLoanData = $.immutableLoanData[loanId];
         RepaymentData storage _cumulativeRepaymentData = $.cumulativeRepaymentData[loanId];
-        uint256 interestMultiplier = _lastEpochInterestMultiplier(loanId);
-        uint256 lastEpochInterest = interestMultiplier.mulDiv(
-            _immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid, ONE
-        );
+        uint256 lastEpochInterest = _lastEpochInterestFactor(loanId)
+            .mulDiv(_immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid, ONE);
 
         uint256 economicsEpochId = _mutableLoanData.nextEconomicsEpochsId;
         $.economicsEpochs[loanId][economicsEpochId] = EconomicsEpoch({
@@ -272,10 +278,8 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
 
         ImmutableLoanData storage _immutableLoanData = $.immutableLoanData[loanId];
         RepaymentData storage _cumulativeRepaymentData = $.cumulativeRepaymentData[loanId];
-        uint256 interestMultiplier = _lastEpochInterestMultiplier(loanId);
-        uint256 lastEpochInterest = interestMultiplier.mulDiv(
-            _immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid, ONE
-        );
+        uint256 lastEpochInterest = _lastEpochInterestFactor(loanId)
+            .mulDiv(_immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid, ONE);
 
         uint256 economicsEpochId = _mutableLoanData.nextEconomicsEpochsId;
         $.economicsEpochs[loanId][economicsEpochId] = EconomicsEpoch({
@@ -342,23 +346,19 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         uint256 economicsEpochId = _mutableLoanData.nextEconomicsEpochsId - 1;
         EconomicsEpoch storage economicsEpoch = $.economicsEpochs[loanId][economicsEpochId];
 
-        uint256 lastEpochInterestMultiplier =
-            (ONE + (block.timestamp - economicsEpoch.effectiveFrom).mulDiv(economicsEpoch.seniorInterestRate, YEAR));
-
-        uint256 lastEpochInterest = lastEpochInterestMultiplier.mulDiv(
-            _immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid, ONE
-        );
+        uint256 lastEpochInterest = _lastEpochInterestFactor(loanId)
+            .mulDiv(_immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid, ONE);
         return economicsEpoch.accruedInterest + lastEpochInterest - _cumulativeRepaymentData.seniorInterest;
     }
 
-    function _lastEpochInterestMultiplier(uint256 loanId) private view returns (uint256) {
+    function _lastEpochInterestFactor(uint256 loanId) private view returns (uint256) {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
 
         MutableLoanData storage _mutableLoanData = $.mutableLoanData[loanId];
         uint256 economicsEpochId = _mutableLoanData.nextEconomicsEpochsId - 1;
         EconomicsEpoch storage economicsEpoch = $.economicsEpochs[loanId][economicsEpochId];
 
-        return (ONE + (block.timestamp - economicsEpoch.effectiveFrom).mulDiv(economicsEpoch.seniorInterestRate, YEAR));
+        return (block.timestamp - economicsEpoch.effectiveFrom).mulDiv(economicsEpoch.seniorInterestRate, YEAR);
     }
 
     function _update(address to, uint256 tokenId, address auth) internal virtual override returns (address from) {
