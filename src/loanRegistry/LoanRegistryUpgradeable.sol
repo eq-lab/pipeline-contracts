@@ -12,13 +12,13 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     using Math for uint256;
 
     uint256 public constant ONE = 1_000_000;
-    uint256 constant YEAR = 31557600;
+    uint256 public constant YEAR = 31557600;
 
     event LoanDrawn(uint256 indexed loanId, address indexed holder, string indexed metadataURI);
     event StatusUpdated(uint256 indexed loanId, LoanStatus indexed newStatus);
-    event CCRUpdated(uint256 indexed loanId, uint32 newCcrBps);
+    event CCRUpdated(uint256 indexed loanId, uint32 newCcr);
     event LocationUpdated(uint256 indexed loanId, string indexed newLocation);
-    event LoanDefaulted(uint256 indexed loanId, uint32 ccrBps);
+    event LoanDefaulted(uint256 indexed loanId, uint32 ccr);
     event LoanClosed(uint256 indexed loanId, ClosureReason indexed reason);
     event PaymentRecorded(uint256 indexed tokenId, uint256 indexed repaymentId, RepaymentData repaymentData);
 
@@ -96,10 +96,10 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         address originator,
         string calldata metadataURI,
         ImmutableLoanData calldata economics,
-        uint32 initialCcrBps,
+        uint32 initialCcr,
         LocationUpdate calldata initialLocation
     ) internal whenNotPaused returns (uint256 loanId) {
-        if (initialCcrBps < ONE) revert LoanRegistryLowCcr();
+        if (initialCcr < ONE) revert LoanRegistryLowCcr();
         if (economics.originalSeniorTranche + economics.originalEquityTranche != economics.originalFacilitySize) {
             revert();
         }
@@ -115,7 +115,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
 
         _mutableLoanData.metadataURI = metadataURI;
         _mutableLoanData.currentMaturityTimestamp = economics.originalMaturityDate;
-        _mutableLoanData.ccrBps = initialCcrBps;
+        _mutableLoanData.ccr = initialCcr;
         _mutableLoanData.lastReportedCCRTimestamp = uint64(block.timestamp);
         _mutableLoanData.currentLocation = initialLocation;
         _mutableLoanData.nextEconomicsEpochsId = 1;
@@ -124,7 +124,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
             accruedInterest: 0,
             effectiveFrom: economics.originationDate,
             maturityDate: economics.originalMaturityDate,
-            seniorInterestRateBps: economics.seniorInterestRateBps
+            seniorInterestRate: economics.seniorInterestRate
         });
 
         _mint(originator, loanId);
@@ -146,12 +146,14 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         if (status >= LoanStatus.Default) revert();
 
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
+        if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
 
         MutableLoanData storage _mutableLoanData = $.mutableLoanData[loanId];
+        if (_mutableLoanData.status == LoanStatus.Closed) revert LoanRegistryAlreadyClosed(loanId);
 
         _mutableLoanData.metadataURI = metadataURI;
         _mutableLoanData.status = status;
-        _mutableLoanData.ccrBps = newCCR;
+        _mutableLoanData.ccr = newCCR;
         _mutableLoanData.lastReportedCCRTimestamp = uint64(block.timestamp);
         _mutableLoanData.currentLocation = newLocation;
     }
@@ -172,7 +174,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
 
         MutableLoanData storage _mutableLoanData = $.mutableLoanData[loanId];
-        if (_mutableLoanData.status <= LoanStatus.WatchList) {
+        if (_mutableLoanData.status >= LoanStatus.Default) {
             revert LoanRegistryWrongCurrentStatus(loanId, $.mutableLoanData[loanId].status);
         }
 
@@ -198,15 +200,16 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         ImmutableLoanData storage _immutableLoanData = $.immutableLoanData[loanId];
         RepaymentData storage _cumulativeRepaymentData = $.cumulativeRepaymentData[loanId];
         uint256 interestMultiplier = _lastEpochInterestMultiplier(loanId);
-        uint256 lastEpochInterest = interestMultiplier
-            * (_immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid);
+        uint256 lastEpochInterest = interestMultiplier.mulDiv(
+            _immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid, ONE
+        );
 
         uint256 economicsEpochId = _mutableLoanData.nextEconomicsEpochsId;
         $.economicsEpochs[loanId][economicsEpochId] = EconomicsEpoch({
             accruedInterest: $.economicsEpochs[loanId][economicsEpochId - 1].accruedInterest + lastEpochInterest,
             effectiveFrom: uint64(block.timestamp),
             maturityDate: $.economicsEpochs[loanId][economicsEpochId - 1].maturityDate,
-            seniorInterestRateBps: $.economicsEpochs[loanId][economicsEpochId - 1].seniorInterestRateBps
+            seniorInterestRate: $.economicsEpochs[loanId][economicsEpochId - 1].seniorInterestRate
         });
 
         unchecked {
@@ -216,12 +219,14 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         emit PaymentRecorded(loanId, repaymentId, repaymentUpdate);
     }
 
-    function _rollover(uint256 loanId, uint32 newRateBps, uint64 newMaturityTimestamp) internal {
+    function _rollover(uint256 loanId, uint32 newRate, uint64 newMaturityTimestamp) internal whenNotPaused {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
 
         MutableLoanData storage _mutableLoanData = $.mutableLoanData[loanId];
-        if (_mutableLoanData.status >= LoanStatus.Default) revert();
+        if (_mutableLoanData.status >= LoanStatus.Default) {
+            revert LoanRegistryWrongCurrentStatus(loanId, _mutableLoanData.status);
+        }
         if (_mutableLoanData.currentMaturityTimestamp > block.timestamp) revert();
 
         _mutableLoanData.currentMaturityTimestamp = newMaturityTimestamp;
@@ -230,15 +235,16 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         ImmutableLoanData storage _immutableLoanData = $.immutableLoanData[loanId];
         RepaymentData storage _cumulativeRepaymentData = $.cumulativeRepaymentData[loanId];
         uint256 interestMultiplier = _lastEpochInterestMultiplier(loanId);
-        uint256 lastEpochInterest = interestMultiplier
-            * (_immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid);
+        uint256 lastEpochInterest = interestMultiplier.mulDiv(
+            _immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid, ONE
+        );
 
         uint256 economicsEpochId = _mutableLoanData.nextEconomicsEpochsId;
         $.economicsEpochs[loanId][economicsEpochId] = EconomicsEpoch({
             accruedInterest: $.economicsEpochs[loanId][economicsEpochId - 1].accruedInterest + lastEpochInterest,
             effectiveFrom: uint64(block.timestamp),
             maturityDate: newMaturityTimestamp,
-            seniorInterestRateBps: newRateBps
+            seniorInterestRate: newRate
         });
 
         unchecked {
@@ -246,11 +252,12 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         }
     }
 
-    function _amendEconomics(uint256 loanId, uint32 newRateBps, uint64 newMaturityTimestamp) internal {
+    function _amendEconomics(uint256 loanId, uint32 newRate, uint64 newMaturityTimestamp) internal whenNotPaused {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
 
         MutableLoanData storage _mutableLoanData = $.mutableLoanData[loanId];
+        if (_mutableLoanData.status == LoanStatus.Closed) revert LoanRegistryAlreadyClosed(loanId);
 
         _mutableLoanData.currentMaturityTimestamp = newMaturityTimestamp;
         _mutableLoanData.status = LoanStatus.Performing;
@@ -258,15 +265,16 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         ImmutableLoanData storage _immutableLoanData = $.immutableLoanData[loanId];
         RepaymentData storage _cumulativeRepaymentData = $.cumulativeRepaymentData[loanId];
         uint256 interestMultiplier = _lastEpochInterestMultiplier(loanId);
-        uint256 lastEpochInterest = interestMultiplier
-            * (_immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid);
+        uint256 lastEpochInterest = interestMultiplier.mulDiv(
+            _immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid, ONE
+        );
 
         uint256 economicsEpochId = _mutableLoanData.nextEconomicsEpochsId;
         $.economicsEpochs[loanId][economicsEpochId] = EconomicsEpoch({
             accruedInterest: $.economicsEpochs[loanId][economicsEpochId - 1].accruedInterest + lastEpochInterest,
             effectiveFrom: uint64(block.timestamp),
             maturityDate: newMaturityTimestamp,
-            seniorInterestRateBps: newRateBps
+            seniorInterestRate: newRate
         });
 
         unchecked {
@@ -274,7 +282,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         }
     }
 
-    function _setDefault(uint256 loanId, uint32 ccrBps) internal whenNotPaused {
+    function _setDefault(uint256 loanId, uint32 ccr) internal whenNotPaused {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
 
@@ -283,9 +291,9 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
 
         MutableLoanData storage loanData = $.mutableLoanData[loanId];
         loanData.status = LoanStatus.Default;
-        loanData.ccrBps = ccrBps;
+        loanData.ccr = ccr;
 
-        emit LoanDefaulted(loanId, ccrBps);
+        emit LoanDefaulted(loanId, ccr);
     }
 
     function _closeLoan(uint256 loanId, ClosureReason reason) internal whenNotPaused {
@@ -327,10 +335,11 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         EconomicsEpoch storage economicsEpoch = $.economicsEpochs[loanId][economicsEpochId];
 
         uint256 lastEpochInterestMultiplier =
-            (ONE + (block.timestamp - economicsEpoch.effectiveFrom).mulDiv(economicsEpoch.seniorInterestRateBps, YEAR));
+            (ONE + (block.timestamp - economicsEpoch.effectiveFrom).mulDiv(economicsEpoch.seniorInterestRate, YEAR));
 
-        uint256 lastEpochInterest = lastEpochInterestMultiplier
-            * (_immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid);
+        uint256 lastEpochInterest = lastEpochInterestMultiplier.mulDiv(
+            _immutableLoanData.originalSeniorTranche - _cumulativeRepaymentData.seniorPrincipalRepaid, ONE
+        );
         return economicsEpoch.accruedInterest + lastEpochInterest - _cumulativeRepaymentData.seniorPrincipalRepaid;
     }
 
@@ -341,8 +350,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         uint256 economicsEpochId = _mutableLoanData.nextEconomicsEpochsId - 1;
         EconomicsEpoch storage economicsEpoch = $.economicsEpochs[loanId][economicsEpochId];
 
-        return
-            (ONE + (block.timestamp - economicsEpoch.effectiveFrom).mulDiv(economicsEpoch.seniorInterestRateBps, YEAR));
+        return (ONE + (block.timestamp - economicsEpoch.effectiveFrom).mulDiv(economicsEpoch.seniorInterestRate, YEAR));
     }
 
     function _update(address to, uint256 tokenId, address auth) internal virtual override returns (address from) {

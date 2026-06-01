@@ -29,7 +29,7 @@ interface ILoanRegistry {
         uint256 originalSeniorTranche;
         uint256 originalEquityTranche;
         uint256 originalOfftakerPrice;
-        uint32 seniorInterestRateBps;
+        uint32 seniorInterestRate;
         uint64 originationDate;
         uint64 originalMaturityDate;
     }
@@ -38,14 +38,14 @@ interface ILoanRegistry {
         uint256 accruedInterest;
         uint64 effectiveFrom;
         uint64 maturityDate;
-        uint32 seniorInterestRateBps;
+        uint32 seniorInterestRate;
     }
 
     struct MutableLoanData {
         uint256 nextEconomicsEpochsId;
         uint256 nextRepaymentId;
         LoanStatus status;
-        uint32 ccrBps;
+        uint32 ccr;
         uint64 lastReportedCCRTimestamp;
         uint64 currentMaturityTimestamp;
         ClosureReason closureReason;
@@ -74,7 +74,7 @@ interface ILoanRegistry {
         address originator,
         string calldata metadataURI,
         ImmutableLoanData calldata economics,
-        uint32 initialCcrBps,
+        uint32 initialCcr,
         LocationUpdate calldata initialLocation
     ) external returns (uint256 loanId);
 
@@ -90,11 +90,11 @@ interface ILoanRegistry {
         external
         returns (uint256 repaymentId);
 
-    function rollover(uint256 loanId, uint32 newRateBps, uint64 newMaturityDate) external;
+    function rollover(uint256 loanId, uint32 newRate, uint64 newMaturityDate) external;
 
-    function amendEconomics(uint256 loanId, uint32 newRateBps, uint64 newMaturityDate) external;
+    function amendEconomics(uint256 loanId, uint32 newRate, uint64 newMaturityDate) external;
 
-    function setDefault(uint256 loanId, uint32 ccrBps) external;
+    function setDefault(uint256 loanId, uint32 ccr) external;
 
     function closeLoan(uint256 loanId, ClosureReason reason) external;
 

@@ -59,12 +59,12 @@ contract PipelineYieldMinterTest is PipelineTestSetUp {
 
         ILoanRegistry.ImmutableLoanData memory loanData = ILoanRegistry.ImmutableLoanData({
             originalFacilitySize: 1_000_000_000,
-            originalSeniorTranche: 1_000_000,
-            originalEquityTranche: 2_000_000,
-            originalOfftakerPrice: 3_000_000,
-            seniorInterestRateBps: 1_000_000,
+            originalSeniorTranche: 600_000_000,
+            originalEquityTranche: 400_000_000,
+            originalOfftakerPrice: 3_000_000_000,
+            seniorInterestRate: 1_000_000,
             originationDate: uint64(block.timestamp),
-            originalMaturityDate: uint64(block.timestamp + 100)
+            originalMaturityDate: uint64(block.timestamp + loanRegistry.YEAR())
         });
 
         address loanOwner = makeAddr("loanOwner");
@@ -74,13 +74,13 @@ contract PipelineYieldMinterTest is PipelineTestSetUp {
         loanId = loanRegistry.drawLoan(loanOwner, defaultMetadataURI, loanData, 1_000_000, location);
 
         ILoanRegistry.RepaymentData memory repayment = ILoanRegistry.RepaymentData({
-            offtakerReceived: 1_000_000_000_000_000,
-            equityDistributed: 1_000_000_000_000,
-            seniorPrincipalRepaid: 2_000_000_000_000,
-            seniorInterest: 3_000_000_000_000,
-            mgmtFee: 4_000_000_000_000,
-            perfFee: 5_000_000_000_000,
-            oetAlloc: 6_000_000_000_000
+            offtakerReceived: 1_000_000_000,
+            equityDistributed: 100_000_000,
+            seniorPrincipalRepaid: 500_000_000,
+            seniorInterest: 300_000_000,
+            mgmtFee: 4_000_000,
+            perfFee: 5_000_000,
+            oetAlloc: 6_000_000
         });
 
         vm.prank(loanRegistryManager);

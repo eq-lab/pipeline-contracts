@@ -26,10 +26,10 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
         address to,
         string calldata metadataURI,
         ImmutableLoanData calldata immutableLoanData,
-        uint32 initialCcrBps,
+        uint32 initialCcr,
         LocationUpdate calldata location
     ) external restricted returns (uint256 loanId) {
-        return _drawLoan(to, metadataURI, immutableLoanData, initialCcrBps, location);
+        return _drawLoan(to, metadataURI, immutableLoanData, initialCcr, location);
     }
 
     function updateMutable(
@@ -50,16 +50,16 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
         return _recordPayment(loanId, repaymentData);
     }
 
-    function rollover(uint256 loanId, uint32 newRateBps, uint64 newMaturityDate) external restricted {
-        _rollover(loanId, newRateBps, newMaturityDate);
+    function rollover(uint256 loanId, uint32 newRate, uint64 newMaturityDate) external restricted {
+        _rollover(loanId, newRate, newMaturityDate);
     }
 
-    function amendEconomics(uint256 loanId, uint32 newRateBps, uint64 newMaturityDate) external restricted {
-        _amendEconomics(loanId, newRateBps, newMaturityDate);
+    function amendEconomics(uint256 loanId, uint32 newRate, uint64 newMaturityDate) external restricted {
+        _amendEconomics(loanId, newRate, newMaturityDate);
     }
 
-    function setDefault(uint256 loanId, uint32 ccrBps) external restricted {
-        _setDefault(loanId, ccrBps);
+    function setDefault(uint256 loanId, uint32 ccr) external restricted {
+        _setDefault(loanId, ccr);
     }
 
     function closeLoan(uint256 loanId, ClosureReason reason) external restricted {
