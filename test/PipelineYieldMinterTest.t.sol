@@ -54,6 +54,27 @@ contract PipelineYieldMinterTest is PipelineTestSetUp {
         loanRegistry.markMinted(0, 0);
     }
 
+    function testFuzz_setTreasury(address newTreasury) public {
+        vm.assume(newTreasury != address(0) && newTreasury != yieldMinter.treasury());
+
+        vm.prank(yieldMinterManager);
+        yieldMinter.setTreasury(newTreasury);
+
+        assertEq(yieldMinter.treasury(), newTreasury);
+    }
+
+    function test_setTreasuryReverts() public {
+        address treasury = yieldMinter.treasury();
+
+        vm.prank(yieldMinterManager);
+        vm.expectRevert(abi.encodeWithSelector(PipelineYieldMinter.YieldMinterSameValue.selector));
+        yieldMinter.setTreasury(treasury);
+
+        vm.prank(yieldMinterManager);
+        vm.expectRevert(abi.encodeWithSelector(PipelineYieldMinter.YieldMinterZeroAddress.selector));
+        yieldMinter.setTreasury(address(0));
+    }
+
     function _setUpDefaultLoanAndPayment() private returns (uint256 loanId, uint256 repaymentId) {
         string memory defaultMetadataURI = "defaultMetadataURI";
 

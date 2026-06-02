@@ -183,8 +183,9 @@ contract PipelineTestSetUp is Test {
         vm.prank(admin);
         authority.grantRole(roleId, yieldMinterManager, 0);
 
-        bytes4[] memory selectors = new bytes4[](1);
+        bytes4[] memory selectors = new bytes4[](2);
         selectors[0] = PipelineYieldMinter.mintYield.selector;
+        selectors[1] = PipelineYieldMinter.setTreasury.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(yieldMinter), selectors, roleId);

@@ -15,14 +15,13 @@ contract PipelineYieldMinter is AccessManaged {
     address public immutable stakedPlUsd;
     address public treasury;
 
-    struct YieldMint {
-        uint256 amount;
-        uint256 nonce;
-    }
-
     event YieldMinted(uint256 sPlUsdAmount, uint256 treasuryAmount);
+    event TreasurySet(address);
 
     error YieldMinterForbiddenMint(uint256 loanId, uint256 repaymentId);
+    error YieldMinterZeroAmounts();
+    error YieldMinterZeroAddress();
+    error YieldMinterSameValue();
 
     constructor(address _authority, address _stakedPlUsd, address _loanRegistry, address _treasury)
         AccessManaged(_authority)
@@ -31,7 +30,7 @@ contract PipelineYieldMinter is AccessManaged {
         plUsd = IERC20Managed(IERC4626(_stakedPlUsd).asset());
 
         loanRegistry = ILoanRegistry(_loanRegistry);
-        treasury = _treasury;
+        _setTreasury(_treasury);
     }
 
     function mintYield(uint256 loanId, uint256 repaymentId) external restricted {
@@ -42,15 +41,35 @@ contract PipelineYieldMinter is AccessManaged {
         uint256 sPlUsdAmount = repaymentData.seniorInterest;
         uint256 treasuryAmount = repaymentData.mgmtFee + repaymentData.perfFee + repaymentData.oetAlloc;
 
+        if (sPlUsdAmount == 0 && treasuryAmount == 0) revert YieldMinterZeroAmounts();
+
         _executeMintYield(sPlUsdAmount, treasuryAmount);
 
         _loanRegistry.markMinted(loanId, repaymentId);
     }
 
+    function setTreasury(address newTreasury) external restricted {
+        _setTreasury(newTreasury);
+    }
+
     function _executeMintYield(uint256 sPlUsdAmount, uint256 treasuryAmount) private {
-        plUsd.mint(stakedPlUsd, sPlUsdAmount);
-        plUsd.mint(treasury, treasuryAmount);
+        if (sPlUsdAmount != 0) {
+            plUsd.mint(stakedPlUsd, sPlUsdAmount);
+        }
+
+        if (treasuryAmount != 0) {
+            plUsd.mint(treasury, treasuryAmount);
+        }
 
         emit YieldMinted(sPlUsdAmount, treasuryAmount);
+    }
+
+    function _setTreasury(address _treasury) private {
+        if (_treasury == address(0)) revert YieldMinterZeroAddress();
+        if (_treasury == treasury) revert YieldMinterSameValue();
+
+        treasury = _treasury;
+
+        emit TreasurySet(_treasury);
     }
 }

@@ -77,6 +77,10 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         yieldMinter.mintYield(1, 1);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        yieldMinter.setTreasury(caller);
     }
 
     function testFuzz_depositManagerAccess(address caller) public {
