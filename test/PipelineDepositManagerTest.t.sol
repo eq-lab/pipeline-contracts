@@ -286,6 +286,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
     function test_increaseTxLimit(uint256 newTxLimit) public {
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
         vm.assume(newTxLimit > rateLimitConfigBefore.txLimit);
+        vm.assume(newTxLimit <= rateLimitConfigBefore.windowLimit);
 
         vm.prank(depositManagerAdmin);
         depositManager.increaseTxLimit(newTxLimit);
@@ -300,6 +301,15 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
     function test_increaseTxLimitReverts(uint256 newTxLimit) public {
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
         vm.assume(newTxLimit <= rateLimitConfigBefore.txLimit);
+
+        vm.prank(depositManagerAdmin);
+        vm.expectRevert(abi.encodeWithSelector(RateLimiterUpgradeable.RateLimiterWrongValue.selector));
+        depositManager.increaseTxLimit(newTxLimit);
+    }
+
+    function test_increaseTxLimitRevertsAboveWindowLimit(uint256 newTxLimit) public {
+        RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
+        vm.assume(newTxLimit > rateLimitConfigBefore.windowLimit);
 
         vm.prank(depositManagerAdmin);
         vm.expectRevert(abi.encodeWithSelector(RateLimiterUpgradeable.RateLimiterWrongValue.selector));
@@ -355,6 +365,7 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
     function test_decreaseWindowLimit(uint256 newWindowLimit) public {
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
         vm.assume(newWindowLimit < rateLimitConfigBefore.windowLimit);
+        vm.assume(newWindowLimit >= rateLimitConfigBefore.txLimit);
 
         vm.prank(depositManagerAdmin);
         depositManager.decreaseWindowLimit(newWindowLimit);
@@ -369,6 +380,15 @@ contract PipelineDepositManagerTest is PipelineTestSetUp {
     function test_decreaseWindowLimitReverts(uint256 newWindowLimit) public {
         RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
         vm.assume(newWindowLimit >= rateLimitConfigBefore.windowLimit);
+
+        vm.prank(depositManagerAdmin);
+        vm.expectRevert(abi.encodeWithSelector(RateLimiterUpgradeable.RateLimiterWrongValue.selector));
+        depositManager.decreaseWindowLimit(newWindowLimit);
+    }
+
+    function test_decreaseWindowLimitRevertsBelowTxLimit(uint256 newWindowLimit) public {
+        RateLimiterUpgradeable.RateLimitConfig memory rateLimitConfigBefore = depositManager.rateLimitConfig();
+        vm.assume(newWindowLimit < rateLimitConfigBefore.txLimit);
 
         vm.prank(depositManagerAdmin);
         vm.expectRevert(abi.encodeWithSelector(RateLimiterUpgradeable.RateLimiterWrongValue.selector));

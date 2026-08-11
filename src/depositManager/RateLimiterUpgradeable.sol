@@ -51,6 +51,7 @@ contract RateLimiterUpgradeable is Initializable, AccessManagedUpgradeable {
 
     function __RateLimiter_init_unchained(RateLimitConfig calldata _rateLimitConfig) internal onlyInitializing {
         if (_rateLimitConfig.window == 0) revert RateLimiterWrongValue();
+        if (_rateLimitConfig.txLimit > _rateLimitConfig.windowLimit) revert RateLimiterWrongValue();
         RateLimiterStorage storage $ = _getRateLimiterStorage();
         $.rateLimitConfig = _rateLimitConfig;
     }
@@ -58,6 +59,7 @@ contract RateLimiterUpgradeable is Initializable, AccessManagedUpgradeable {
     function increaseTxLimit(uint256 newTxLimit) external restricted {
         RateLimiterStorage storage $ = _getRateLimiterStorage();
         if ($.rateLimitConfig.txLimit >= newTxLimit) revert RateLimiterWrongValue();
+        if (newTxLimit > $.rateLimitConfig.windowLimit) revert RateLimiterWrongValue();
 
         $.rateLimitConfig.txLimit = newTxLimit;
         emit TxLimitIncreased(newTxLimit);
@@ -82,6 +84,7 @@ contract RateLimiterUpgradeable is Initializable, AccessManagedUpgradeable {
     function decreaseWindowLimit(uint256 newWindowLimit) external restricted {
         RateLimiterStorage storage $ = _getRateLimiterStorage();
         if ($.rateLimitConfig.windowLimit <= newWindowLimit) revert RateLimiterWrongValue();
+        if (newWindowLimit < $.rateLimitConfig.txLimit) revert RateLimiterWrongValue();
 
         $.rateLimitConfig.windowLimit = newWindowLimit;
         emit WindowLimitDecreased(newWindowLimit);
