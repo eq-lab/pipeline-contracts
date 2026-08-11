@@ -355,7 +355,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.warp(loanRegistry.YEAR() / 2);
 
         ILoanRegistry.RepaymentData memory repayment = ILoanRegistry.RepaymentData({
-            offtakerReceived: 1_000_000_000,
+            offtakerReceived: 865_000_000,
             equityDistributed: 100_000_000,
             seniorPrincipalRepaid: 500_000_000,
             seniorInterest: 250_000_000,
@@ -419,7 +419,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
         ILoanRegistry.RepaymentData[3] memory repayments = [
             ILoanRegistry.RepaymentData({
-                offtakerReceived: 400_000_000,
+                offtakerReceived: 166_000_000,
                 equityDistributed: 10_000_000,
                 seniorPrincipalRepaid: 50_000_000,
                 seniorInterest: 100_000_000,
@@ -428,7 +428,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
                 oetAlloc: 3_000_000
             }),
             ILoanRegistry.RepaymentData({
-                offtakerReceived: 300_000_000,
+                offtakerReceived: 141_000_000,
                 equityDistributed: 20_000_000,
                 seniorPrincipalRepaid: 40_000_000,
                 seniorInterest: 75_000_000,
@@ -437,7 +437,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
                 oetAlloc: 3_000_000
             }),
             ILoanRegistry.RepaymentData({
-                offtakerReceived: 500_000_000,
+                offtakerReceived: 296_000_000,
                 equityDistributed: 30_000_000,
                 seniorPrincipalRepaid: 60_000_000,
                 seniorInterest: 200_000_000,
@@ -539,6 +539,57 @@ contract LoanRegistryTest is PipelineTestSetUp {
                 loanId,
                 seniorTranche + 1,
                 seniorTranche
+            )
+        );
+        loanRegistry.recordPayment(loanId, oneMore);
+    }
+
+    function test_recordPaymentOfftakerExceedsPrice() public {
+        uint256 loanId = _drawDefaultLoan(makeAddr("loanOwner"));
+        uint256 offtakerPrice = loanRegistry.immutableLoanData(loanId).originalOfftakerPrice;
+
+        ILoanRegistry.RepaymentData memory aboveCap;
+        aboveCap.offtakerReceived = offtakerPrice + 1;
+        aboveCap.oetAlloc = offtakerPrice + 1;
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                LoanRegistryUpgradeable.LoanRegistryOfftakerExceedsPrice.selector,
+                loanId,
+                offtakerPrice + 1,
+                offtakerPrice
+            )
+        );
+        loanRegistry.recordPayment(loanId, aboveCap);
+
+        ILoanRegistry.RepaymentData memory firstHalf;
+        firstHalf.offtakerReceived = offtakerPrice / 2;
+        firstHalf.oetAlloc = offtakerPrice / 2;
+
+        vm.prank(loanRegistryManager);
+        loanRegistry.recordPayment(loanId, firstHalf);
+
+        ILoanRegistry.RepaymentData memory secondHalf;
+        secondHalf.offtakerReceived = offtakerPrice - offtakerPrice / 2;
+        secondHalf.oetAlloc = offtakerPrice - offtakerPrice / 2;
+
+        vm.prank(loanRegistryManager);
+        loanRegistry.recordPayment(loanId, secondHalf);
+
+        assertEq(loanRegistry.cumulativeRepaymentData(loanId).offtakerReceived, offtakerPrice);
+
+        ILoanRegistry.RepaymentData memory oneMore;
+        oneMore.offtakerReceived = 1;
+        oneMore.oetAlloc = 1;
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                LoanRegistryUpgradeable.LoanRegistryOfftakerExceedsPrice.selector,
+                loanId,
+                offtakerPrice + 1,
+                offtakerPrice
             )
         );
         loanRegistry.recordPayment(loanId, oneMore);

@@ -97,7 +97,7 @@ contract PipelineYieldMinterTest is PipelineTestSetUp {
         vm.warp(block.timestamp + loanRegistry.YEAR() / 2);
 
         ILoanRegistry.RepaymentData memory repayment = ILoanRegistry.RepaymentData({
-            offtakerReceived: 1_000_000_000,
+            offtakerReceived: 865_000_000,
             equityDistributed: 100_000_000,
             seniorPrincipalRepaid: 500_000_000,
             seniorInterest: 250_000_000,
