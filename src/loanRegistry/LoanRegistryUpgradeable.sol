@@ -40,6 +40,9 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     error LoanRegistryInvalidMaturityDate();
     error LoanRegistryInvalidOfftakerPrice();
     error LoanRegistryNotMatured(uint256 loanId);
+    error LoanRegistryOfftakerExceedsPrice(
+        uint256 loanId, uint256 cumulativeOfftakerReceived, uint256 originalOfftakerPrice
+    );
 
     /// @custom:storage-location erc7201:pipeline.storage.LoanRegistry
     struct LoanRegistryStorage {
@@ -291,7 +294,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         uint256 repaymentSum = repaymentUpdate.seniorPrincipalRepaid + repaymentUpdate.seniorInterest
             + repaymentUpdate.equityDistributed + repaymentUpdate.mgmtFee + repaymentUpdate.perfFee
             + repaymentUpdate.oetAlloc;
-        if (repaymentSum > repaymentUpdate.offtakerReceived) {
+        if (repaymentSum != repaymentUpdate.offtakerReceived) {
             revert LoanRegistryWrongRepaymentData();
         }
 
@@ -311,6 +314,13 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         uint256 originalSeniorTranche = $.immutableLoanData[loanId].originalSeniorTranche;
         if (cumulativeSeniorPrincipalRepaid > originalSeniorTranche) {
             revert LoanRegistryPrincipalExceedsTranche(loanId, cumulativeSeniorPrincipalRepaid, originalSeniorTranche);
+        }
+
+        uint256 cumulativeOfftakerReceived =
+            $.cumulativeRepaymentData[loanId].offtakerReceived + repaymentUpdate.offtakerReceived;
+        uint256 originalOfftakerPrice = $.immutableLoanData[loanId].originalOfftakerPrice;
+        if (cumulativeOfftakerReceived > originalOfftakerPrice) {
+            revert LoanRegistryOfftakerExceedsPrice(loanId, cumulativeOfftakerReceived, originalOfftakerPrice);
         }
     }
 
