@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.34;
 
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+
 import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
 
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
@@ -53,5 +55,42 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
             abi.encodeWithSelector(WhitelistAccessedUpgradeable.WhitelistAccessedNoAccess.selector, recipient)
         );
         sPlUsd.redeem(amount, recipient, user);
+    }
+
+    function test_pauses() public {
+        uint256 depositAmount = plUsd.balanceOf(user);
+
+        vm.prank(user);
+        plUsd.approve(address(sPlUsd), depositAmount);
+
+        vm.prank(user);
+        uint256 shares = sPlUsd.deposit(depositAmount, user);
+
+        vm.prank(pauser);
+        sPlUsd.pause();
+        assert(sPlUsd.paused());
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        sPlUsd.deposit(1, user);
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        sPlUsd.mint(1, user);
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        sPlUsd.withdraw(1, user, user);
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        sPlUsd.redeem(shares, user, user);
+
+        vm.prank(pauser);
+        sPlUsd.unpause();
+        assert(!sPlUsd.paused());
+
+        vm.prank(user);
+        sPlUsd.redeem(shares, user, user);
     }
 }

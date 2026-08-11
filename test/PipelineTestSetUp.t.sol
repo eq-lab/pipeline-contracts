@@ -203,6 +203,12 @@ contract PipelineTestSetUp is Test {
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
+
+        selectors[0] = StakedPipelineUSD.pause.selector;
+        selectors[1] = StakedPipelineUSD.unpause.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(sPlUsd), selectors, roleId);
     }
 
     function _setUpUpgrader() private {
