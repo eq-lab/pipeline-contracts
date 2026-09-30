@@ -22,52 +22,88 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
         __LoanRegistry_init(erc721Name, erc721Symbol);
     }
 
-    function drawLoan(
-        address to,
-        string calldata metadataURI,
-        ImmutableLoanData calldata immutableLoanData,
-        uint32 initialCcr,
-        LocationUpdate calldata location
-    ) external restricted returns (uint256 loanId) {
-        return _drawLoan(to, metadataURI, immutableLoanData, initialCcr, location);
+    function drawLoan(string calldata metadataURI, ImmutableLoanData calldata economics)
+        external
+        restricted
+        returns (uint256 loanId)
+    {
+        return _drawLoan(metadataURI, economics);
     }
 
-    function updateMutable(
-        uint256 loanId,
-        string calldata metadataURI,
-        LoanStatus status,
-        uint32 newCCR,
-        LocationUpdate calldata newLocation
-    ) external restricted {
-        _updateMutable(loanId, metadataURI, status, newCCR, newLocation);
+    function updateMutable(uint256 loanId, LoanStatus newStatus, string calldata metadataURI) external restricted {
+        _updateMutable(loanId, newStatus, metadataURI);
     }
 
-    function recordPayment(uint256 loanId, RepaymentData calldata repaymentData)
+    function disburse(uint256 loanId, uint256 amount) external restricted returns (uint256 index) {
+        return _disburse(loanId, amount);
+    }
+
+    function undisburse(uint256 loanId, uint256 index, uint256 amount) external restricted {
+        _undisburse(loanId, index, amount);
+    }
+
+    function recordPayment(uint256 loanId, RepaymentData calldata repayment)
         external
         restricted
         returns (uint256 repaymentId)
     {
-        return _recordPayment(loanId, repaymentData);
+        return _recordPayment(loanId, repayment);
     }
 
-    function rollover(uint256 loanId, uint32 newRate, uint64 newMaturityDate) external restricted {
-        _rollover(loanId, newRate, newMaturityDate);
+    function unrecordPayment(uint256 loanId, uint256 repaymentId) external restricted returns (RepaymentData memory) {
+        return _unrecordPayment(loanId, repaymentId);
     }
 
-    function amendEconomics(uint256 loanId, uint32 newRate, uint64 newMaturityDate) external restricted {
-        _amendEconomics(loanId, newRate, newMaturityDate);
+    function rollover(uint256 loanId, uint32 newRate, uint64 newMaturityTimestamp) external restricted {
+        _rollover(loanId, newRate, newMaturityTimestamp);
     }
 
-    function setDefault(uint256 loanId, uint32 ccr) external restricted {
-        _setDefault(loanId, ccr);
+    function amendEconomics(uint256 loanId, uint32 newRate, uint64 newMaturityTimestamp) external restricted {
+        _amendEconomics(loanId, newRate, newMaturityTimestamp);
+    }
+
+    function setDefault(uint256 loanId) external restricted {
+        _setDefault(loanId);
+    }
+
+    function writeDown(uint256 loanId, uint256 amount) external restricted {
+        _writeDown(loanId, amount);
+    }
+
+    function adjustInterest(uint256 loanId, int256 delta, bytes32 reasonHash) external restricted {
+        _adjustInterest(loanId, delta, reasonHash);
+    }
+
+    function cure(uint256 loanId) external restricted {
+        _cure(loanId);
     }
 
     function closeLoan(uint256 loanId, ClosureReason reason) external restricted {
         _closeLoan(loanId, reason);
     }
 
-    function markMinted(uint256 loanId, uint256 repaymentId) external restricted {
-        _markMinted(loanId, repaymentId);
+    function closeDefaulted(uint256 loanId, ClosureReason reason) external restricted {
+        _closeDefaulted(loanId, reason);
+    }
+
+    function setCapitalWallet(address newCapitalWallet) external restricted {
+        _setCapitalWallet(newCapitalWallet);
+    }
+
+    function setStakedPlUsd(address newStakedPlUsd) external restricted {
+        _setStakedPlUsd(newStakedPlUsd);
+    }
+
+    function setPocket(address newPocket) external restricted {
+        _setPocket(newPocket);
+    }
+
+    function setMaxFeeBps(uint32 newMaxFeeBps) external restricted {
+        _setMaxFeeBps(newMaxFeeBps);
+    }
+
+    function setMaxResidual(uint256 newMaxResidual) external restricted {
+        _setMaxResidual(newMaxResidual);
     }
 
     function pause() external restricted {
