@@ -3,6 +3,7 @@ pragma solidity ^0.8.34;
 
 interface ILoanRegistry {
     enum LoanStatus {
+        Approved,
         Performing,
         WatchList,
         Default,
@@ -13,18 +14,13 @@ interface ILoanRegistry {
         None,
         ScheduledMaturity,
         EarlyRepayment,
+        Cancelled,
         Default,
         OtherWriteDown
     }
 
-    enum LocationType {
-        Vessel,
-        Warehouse,
-        TankFarm,
-        Other
-    }
-
     struct ImmutableLoanData {
+        bytes32 borrowerRef;
         uint256 originalFacilitySize;
         uint256 originalSeniorTranche;
         uint256 originalEquityTranche;
@@ -45,11 +41,14 @@ interface ILoanRegistry {
         uint256 nextEconomicsEpochsId;
         uint256 nextRepaymentId;
         LoanStatus status;
-        uint32 ccr;
-        uint64 lastReportedCCRTimestamp;
         uint64 currentMaturityTimestamp;
+        uint32 currentRate;
         ClosureReason closureReason;
-        LocationUpdate currentLocation;
+        bool carvedOut;
+        uint256 disbursed;
+        uint256 repaid;
+        uint256 writtenDown;
+        int256 interestAdjustment;
         string metadataURI;
     }
 
@@ -63,45 +62,56 @@ interface ILoanRegistry {
         uint256 oetAlloc;
     }
 
-    struct LocationUpdate {
-        LocationType locationType;
-        string locationIdentifier;
-        string trackingURL;
-        uint64 updatedAt;
+    struct Disbursement {
+        uint256 amount;
+        uint256 remaining;
     }
 
-    function drawLoan(
-        address originator,
-        string calldata metadataURI,
-        ImmutableLoanData calldata economics,
-        uint32 initialCcr,
-        LocationUpdate calldata initialLocation
-    ) external returns (uint256 loanId);
+    struct LoanMoney {
+        uint256 disbursed;
+        uint256 repaid;
+        uint256 writtenDown;
+        uint256 outstanding;
+        uint256 accruedInterest;
+        bool carvedOut;
+    }
 
-    function updateMutable(
-        uint256 loanId,
-        string calldata metadataURI,
-        LoanStatus status,
-        uint32 newCCR,
-        LocationUpdate calldata newLocation
-    ) external;
-
-    function recordPayment(uint256 loanId, RepaymentData calldata repaymentUpdate)
+    function drawLoan(string calldata metadataURI, ImmutableLoanData calldata economics)
         external
-        returns (uint256 repaymentId);
+        returns (uint256 loanId);
 
-    function rollover(uint256 loanId, uint32 newRate, uint64 newMaturityDate) external;
+    function updateMutable(uint256 loanId, LoanStatus newStatus, string calldata metadataURI) external;
 
-    function amendEconomics(uint256 loanId, uint32 newRate, uint64 newMaturityDate) external;
+    function disburse(uint256 loanId, uint256 amount) external returns (uint256 index);
 
-    function setDefault(uint256 loanId, uint32 ccr) external;
+    function undisburse(uint256 loanId, uint256 index, uint256 amount) external;
+
+    function recordPayment(uint256 loanId, RepaymentData calldata repayment) external returns (uint256 repaymentId);
+
+    function unrecordPayment(uint256 loanId, uint256 repaymentId) external returns (RepaymentData memory);
+
+    function rollover(uint256 loanId, uint32 newRate, uint64 newMaturityTimestamp) external;
+
+    function amendEconomics(uint256 loanId, uint32 newRate, uint64 newMaturityTimestamp) external;
+
+    function setDefault(uint256 loanId) external;
+
+    function writeDown(uint256 loanId, uint256 amount) external;
+
+    function adjustInterest(uint256 loanId, int256 delta, bytes32 reasonHash) external;
+
+    function cure(uint256 loanId) external;
 
     function closeLoan(uint256 loanId, ClosureReason reason) external;
 
-    function markMinted(uint256 loanId, uint256 repaymentId) external;
+    function closeDefaulted(uint256 loanId, ClosureReason reason) external;
 
+    function status(uint256 loanId) external view returns (LoanStatus);
+    function outstanding(uint256 loanId) external view returns (uint256);
+    function accruedInterest(uint256 loanId) external view returns (uint256);
+    function loanMoney(uint256 loanId) external view returns (LoanMoney memory);
+    function outstandingTotal() external view returns (uint256);
+    function unabsorbedTotal() external view returns (uint256);
     function repaymentData(uint256 loanId, uint256 repaymentId) external view returns (RepaymentData memory);
     function economicsEpoch(uint256 loanId, uint256 epochId) external view returns (EconomicsEpoch memory);
-    function canYieldBeMinted(uint256 loanId, uint256 repaymentId) external view returns (bool);
-    function maxInterest(uint256 loanId) external view returns (uint256);
 }
