@@ -2,7 +2,6 @@
 pragma solidity ^0.8.34;
 
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-
 import {IERC20Checkpoints} from "./IERC20Checkpoints.sol";
 
 interface IStakedPipelineUSD is IERC4626, IERC20Checkpoints {
