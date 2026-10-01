@@ -46,6 +46,10 @@ contract WhitelistAccessedUpgradeable is Initializable {
         return $.disabled;
     }
 
+    function hasAccess(address who) public view returns (bool) {
+        return isWhitelistDisabled() || _isAllowed(who);
+    }
+
     function _enableWhitelist() internal {
         _getWhitelistAccessedStorage().disabled = false;
         emit WhitelistAccessEnabled();
@@ -57,7 +61,7 @@ contract WhitelistAccessedUpgradeable is Initializable {
     }
 
     function _onlyAllowed(address who) private view {
-        if (!isWhitelistDisabled() && !_isAllowed(who)) revert WhitelistAccessedNoAccess(who);
+        if (!hasAccess(who)) revert WhitelistAccessedNoAccess(who);
     }
 
     function _isAllowed(address who) internal view returns (bool) {
