@@ -101,8 +101,7 @@ abstract contract WithdrawalQueueUpgradeable is PausableUpgradeable, VerifiedReq
     }
 
     function claimableAmount() public view returns (uint256) {
-        WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
-        return $.totalClaimed + convertToShares($.asset.balanceOf($.assetHolder));
+        return _claimableAmount(_getWithdrawalQueueStorage());
     }
 
     function isClaimable(uint256 requestId) external view returns (bool) {
@@ -131,16 +130,12 @@ abstract contract WithdrawalQueueUpgradeable is PausableUpgradeable, VerifiedReq
         uint256 requestAmount = _claimRequest(requestId, verifierSignature);
 
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
-        IERC20 asset = $.asset;
-        address _assetHolder = $.assetHolder;
-
-        uint256 _claimableAmount = $.totalClaimed + convertToShares(asset.balanceOf(_assetHolder));
-        if ($.queued[requestId] > _claimableAmount) revert WithdrawalQueueTooEarly();
+        if ($.queued[requestId] > _claimableAmount($)) revert WithdrawalQueueTooEarly();
 
         amount = convertToAssets(requestAmount);
         $.totalClaimed += requestAmount;
 
-        asset.safeTransferFrom(_assetHolder, msg.sender, amount);
+        $.asset.safeTransferFrom($.assetHolder, msg.sender, amount);
         $.share.burn(requestAmount);
     }
 
@@ -152,6 +147,10 @@ abstract contract WithdrawalQueueUpgradeable is PausableUpgradeable, VerifiedReq
         $.assetHolder = newAssetHolder;
 
         emit AssetHolderSet(newAssetHolder);
+    }
+
+    function _claimableAmount(WithdrawalQueueStorage storage $) private view returns (uint256) {
+        return $.totalClaimed + convertToShares($.asset.balanceOf($.assetHolder));
     }
 
     function _asset() internal view returns (address) {

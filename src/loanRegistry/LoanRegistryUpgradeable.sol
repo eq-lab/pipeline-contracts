@@ -4,7 +4,6 @@ pragma solidity ^0.8.34;
 import {
     ERC721PausableUpgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721PausableUpgradeable.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {ILoanRegistry} from "../interfaces/ILoanRegistry.sol";
@@ -50,35 +49,31 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     event LoanRolledOver(uint256 indexed loanId, uint32 newRate, uint64 newMaturityTimestamp);
     event EconomicsAmended(uint256 indexed loanId, uint32 newRate, uint64 newMaturityTimestamp);
     event CapitalWalletSet(address capitalWallet);
-    event StakedPlUsdSet(address stakedPlUsd);
-    event PocketSet(address pocket);
     event MaxFeeBpsSet(uint32 maxFeeBps);
     event MaxResidualSet(uint256 maxResidual);
 
-    error LoanRegistryNonExistentLoanId(uint256 loanId);
-    error LoanRegistryAlreadyClosed(uint256 loanId);
-    error LoanRegistryWrongCurrentStatus(uint256 loanId, LoanStatus currentStatus);
+    error LoanRegistryNonExistentLoanId();
+    error LoanRegistryAlreadyClosed();
+    error LoanRegistryWrongCurrentStatus(LoanStatus currentStatus);
     error LoanRegistryNonTransferrable();
     error LoanRegistryWrongRepaymentData();
-    error LoanRegistryNonExistentRepayment(uint256 loanId, uint256 repaymentId);
-    error LoanRegistryInterestExceedsMax(uint256 loanId, uint256 seniorInterest, uint256 maxInterest);
+    error LoanRegistryNonExistentRepayment();
+    error LoanRegistryInterestExceedsMax(uint256 maxInterest);
     error LoanRegistryInvalidTranches();
     error LoanRegistryInvalidMaturityDate();
     error LoanRegistryInvalidOfftakerPrice();
-    error LoanRegistryNotMatured(uint256 loanId);
-    error LoanRegistryOfftakerExceedsPrice(
-        uint256 loanId, uint256 cumulativeOfftakerReceived, uint256 originalOfftakerPrice
-    );
-    error LoanRegistryDisbursementExceedsTranche(uint256 loanId, uint256 disbursed, uint256 originalSeniorTranche);
-    error LoanRegistryAmountExceedsOutstanding(uint256 loanId, uint256 amount, uint256 outstanding);
-    error LoanRegistryRepaidExceedsDisbursed(uint256 loanId, uint256 repaidAndWrittenDown, uint256 disbursed);
-    error LoanRegistryFeesExceedCap(uint256 loanId, uint256 fees, uint256 feeCap);
-    error LoanRegistryNonZeroOnDefault(uint256 loanId);
-    error LoanRegistryRepaymentAlreadyReversed(uint256 loanId, uint256 repaymentId);
-    error LoanRegistryCarvedOut(uint256 loanId);
-    error LoanRegistryOutstandingNotZero(uint256 loanId);
-    error LoanRegistryResidualExceedsMax(uint256 loanId, uint256 residual, uint256 maxResidual);
-    error LoanRegistryInvalidClosureReason(ClosureReason reason);
+    error LoanRegistryNotMatured();
+    error LoanRegistryOfftakerExceedsPrice(uint256 cumulativeOfftakerReceived, uint256 originalOfftakerPrice);
+    error LoanRegistryDisbursementExceedsTranche(uint256 disbursed, uint256 originalSeniorTranche);
+    error LoanRegistryAmountExceedsOutstanding(uint256 outstanding);
+    error LoanRegistryRepaidExceedsDisbursed(uint256 repaidAndWrittenDown, uint256 disbursed);
+    error LoanRegistryFeesExceedCap(uint256 feeCap);
+    error LoanRegistryNonZeroOnDefault();
+    error LoanRegistryRepaymentAlreadyReversed();
+    error LoanRegistryCarvedOut();
+    error LoanRegistryOutstandingNotZero();
+    error LoanRegistryResidualExceedsMax(uint256 residual, uint256 maxResidual);
+    error LoanRegistryInvalidClosureReason();
     error LoanRegistryInvalidAmount();
     error LoanRegistryInvalidMaxFeeBps();
     error LoanRegistryNotConfigured();
@@ -114,12 +109,23 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         }
     }
 
-    function __LoanRegistry_init(string calldata erc721name, string calldata erc721symbol) internal onlyInitializing {
+    function __LoanRegistry_init(
+        string calldata erc721name,
+        string calldata erc721symbol,
+        address stakedPlUsd_,
+        address pocket_
+    ) internal onlyInitializing {
         __ERC721_init(erc721name, erc721symbol);
-        __LoanRegistry_init_unchained();
+        __LoanRegistry_init_unchained(stakedPlUsd_, pocket_);
     }
 
-    function __LoanRegistry_init_unchained() internal onlyInitializing {}
+    function __LoanRegistry_init_unchained(address stakedPlUsd_, address pocket_) internal onlyInitializing {
+        if (stakedPlUsd_ == address(0) || pocket_ == address(0)) revert LoanRegistryZeroAddress();
+
+        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
+        $.stakedPlUsd = IStakedPipelineUSD(stakedPlUsd_);
+        $.pocket = IPocket(pocket_);
+    }
 
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         _requireOwned(tokenId);
@@ -243,12 +249,12 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         MutableLoanData storage loan = _existingLoan(_getLoanRegistryStorage(), loanId);
 
         LoanStatus currentStatus = loan.status;
-        if (currentStatus == LoanStatus.Closed) revert LoanRegistryAlreadyClosed(loanId);
+        if (currentStatus == LoanStatus.Closed) revert LoanRegistryAlreadyClosed();
 
         bool allowed = currentStatus == LoanStatus.Approved || currentStatus == LoanStatus.Default
             ? newStatus == currentStatus
             : newStatus == LoanStatus.Performing || newStatus == LoanStatus.WatchList;
-        if (!allowed) revert LoanRegistryWrongCurrentStatus(loanId, currentStatus);
+        if (!allowed) revert LoanRegistryWrongCurrentStatus(currentStatus);
 
         loan.metadataURI = metadataURI;
 
@@ -263,13 +269,13 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         MutableLoanData storage loan = _existingLoan($, loanId);
 
         if (amount == 0) revert LoanRegistryInvalidAmount();
-        _requireStatusRange(loanId, loan.status, LoanStatus.Approved, LoanStatus.WatchList);
-        if (loan.carvedOut) revert LoanRegistryCarvedOut(loanId);
+        _requireStatusRange(loan.status, LoanStatus.Approved, LoanStatus.WatchList);
+        if (loan.carvedOut) revert LoanRegistryCarvedOut();
 
         uint256 disbursed = loan.disbursed + amount;
         uint256 originalSeniorTranche = $.immutableLoanData[loanId].originalSeniorTranche;
         if (disbursed > originalSeniorTranche) {
-            revert LoanRegistryDisbursementExceedsTranche(loanId, disbursed, originalSeniorTranche);
+            revert LoanRegistryDisbursementExceedsTranche(disbursed, originalSeniorTranche);
         }
 
         bool isFirst = _advanceEpoch($, loanId);
@@ -287,11 +293,11 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         MutableLoanData storage loan = _existingLoan($, loanId);
 
         if (amount == 0) revert LoanRegistryInvalidAmount();
-        _requireStatusRange(loanId, loan.status, LoanStatus.Performing, LoanStatus.Default);
-        if (loan.carvedOut) revert LoanRegistryCarvedOut(loanId);
+        _requireStatusRange(loan.status, LoanStatus.Performing, LoanStatus.Default);
+        if (loan.carvedOut) revert LoanRegistryCarvedOut();
 
         uint256 loanOutstanding = _outstanding(loan);
-        if (amount > loanOutstanding) revert LoanRegistryAmountExceedsOutstanding(loanId, amount, loanOutstanding);
+        if (amount > loanOutstanding) revert LoanRegistryAmountExceedsOutstanding(loanOutstanding);
 
         _advanceEpoch($, loanId);
 
@@ -309,7 +315,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         MutableLoanData storage loan = _existingLoan($, loanId);
 
-        _requireStatusRange(loanId, loan.status, LoanStatus.Performing, LoanStatus.Default);
+        _requireStatusRange(loan.status, LoanStatus.Performing, LoanStatus.Default);
         _validateRepayment($, loanId, loan, repayment);
         carvedOut = loan.carvedOut;
 
@@ -346,9 +352,9 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         MutableLoanData storage loan = _existingRepayment($, loanId, repaymentId);
 
-        _requireStatusRange(loanId, loan.status, LoanStatus.Performing, LoanStatus.Default);
+        _requireStatusRange(loan.status, LoanStatus.Performing, LoanStatus.Default);
         if ($.reversedRepayments[loanId][repaymentId]) {
-            revert LoanRegistryRepaymentAlreadyReversed(loanId, repaymentId);
+            revert LoanRegistryRepaymentAlreadyReversed();
         }
 
         $.reversedRepayments[loanId][repaymentId] = true;
@@ -373,8 +379,8 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         MutableLoanData storage loan = _existingLoan($, loanId);
 
-        _requireStatusRange(loanId, loan.status, LoanStatus.Performing, LoanStatus.WatchList);
-        if (loan.currentMaturityTimestamp > block.timestamp) revert LoanRegistryNotMatured(loanId);
+        _requireStatusRange(loan.status, LoanStatus.Performing, LoanStatus.WatchList);
+        if (loan.currentMaturityTimestamp > block.timestamp) revert LoanRegistryNotMatured();
 
         _setTerms($, loanId, newRate, newMaturityTimestamp);
 
@@ -385,7 +391,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         MutableLoanData storage loan = _existingLoan($, loanId);
 
-        if (loan.status == LoanStatus.Closed) revert LoanRegistryAlreadyClosed(loanId);
+        if (loan.status == LoanStatus.Closed) revert LoanRegistryAlreadyClosed();
 
         _setTerms($, loanId, newRate, newMaturityTimestamp);
 
@@ -396,7 +402,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         MutableLoanData storage loan = _existingLoan($, loanId);
 
-        _requireStatusRange(loanId, loan.status, LoanStatus.Performing, LoanStatus.WatchList);
+        _requireStatusRange(loan.status, LoanStatus.Performing, LoanStatus.WatchList);
 
         uint256 loanOutstanding = _outstanding(loan);
         bool firstDefault = !loan.carvedOut;
@@ -414,11 +420,11 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         MutableLoanData storage loan = _existingLoan($, loanId);
 
-        if (loan.status != LoanStatus.Default) revert LoanRegistryWrongCurrentStatus(loanId, loan.status);
+        if (loan.status != LoanStatus.Default) revert LoanRegistryWrongCurrentStatus(loan.status);
         if (amount == 0) revert LoanRegistryInvalidAmount();
 
         uint256 loanOutstanding = _outstanding(loan);
-        if (amount > loanOutstanding) revert LoanRegistryAmountExceedsOutstanding(loanId, amount, loanOutstanding);
+        if (amount > loanOutstanding) revert LoanRegistryAmountExceedsOutstanding(loanOutstanding);
 
         _advanceEpoch($, loanId);
 
@@ -435,7 +441,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     function _adjustInterest(uint256 loanId, int256 delta, bytes32 reasonHash) internal whenNotPaused {
         MutableLoanData storage loan = _existingLoan(_getLoanRegistryStorage(), loanId);
 
-        _requireStatusRange(loanId, loan.status, LoanStatus.Performing, LoanStatus.Default);
+        _requireStatusRange(loan.status, LoanStatus.Performing, LoanStatus.Default);
 
         loan.interestAdjustment += delta;
 
@@ -445,7 +451,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     function _cure(uint256 loanId) internal whenNotPaused {
         MutableLoanData storage loan = _existingLoan(_getLoanRegistryStorage(), loanId);
 
-        if (loan.status != LoanStatus.Default) revert LoanRegistryWrongCurrentStatus(loanId, loan.status);
+        if (loan.status != LoanStatus.Default) revert LoanRegistryWrongCurrentStatus(loan.status);
 
         loan.status = LoanStatus.WatchList;
 
@@ -456,19 +462,19 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         MutableLoanData storage loan = _existingLoan($, loanId);
 
-        _requireStatusRange(loanId, loan.status, LoanStatus.Approved, LoanStatus.WatchList);
+        _requireStatusRange(loan.status, LoanStatus.Approved, LoanStatus.WatchList);
 
         if (reason == ClosureReason.Cancelled) {
-            if (loan.disbursed != 0) revert LoanRegistryOutstandingNotZero(loanId);
+            if (loan.disbursed != 0) revert LoanRegistryOutstandingNotZero();
         } else if (reason == ClosureReason.ScheduledMaturity || reason == ClosureReason.EarlyRepayment) {
-            if (_outstanding(loan) != 0) revert LoanRegistryOutstandingNotZero(loanId);
+            if (_outstanding(loan) != 0) revert LoanRegistryOutstandingNotZero();
         } else {
-            revert LoanRegistryInvalidClosureReason(reason);
+            revert LoanRegistryInvalidClosureReason();
         }
 
         uint256 waived = _accruedInterest($, loanId);
         uint256 _maxResidual = $.maxResidual;
-        if (waived > _maxResidual) revert LoanRegistryResidualExceedsMax(loanId, waived, _maxResidual);
+        if (waived > _maxResidual) revert LoanRegistryResidualExceedsMax(waived, _maxResidual);
 
         _close($, loanId, reason, waived);
     }
@@ -477,11 +483,11 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         MutableLoanData storage loan = _existingLoan($, loanId);
 
-        if (loan.status != LoanStatus.Default) revert LoanRegistryWrongCurrentStatus(loanId, loan.status);
+        if (loan.status != LoanStatus.Default) revert LoanRegistryWrongCurrentStatus(loan.status);
         if (reason != ClosureReason.Default && reason != ClosureReason.OtherWriteDown) {
-            revert LoanRegistryInvalidClosureReason(reason);
+            revert LoanRegistryInvalidClosureReason();
         }
-        if (_outstanding(loan) != 0) revert LoanRegistryOutstandingNotZero(loanId);
+        if (_outstanding(loan) != 0) revert LoanRegistryOutstandingNotZero();
 
         _close($, loanId, reason, _accruedInterest($, loanId));
     }
@@ -494,26 +500,6 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         $.capitalWallet = newCapitalWallet;
 
         emit CapitalWalletSet(newCapitalWallet);
-    }
-
-    function _setStakedPlUsd(address newStakedPlUsd) internal {
-        if (newStakedPlUsd == address(0)) revert LoanRegistryZeroAddress();
-
-        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
-        if (address($.stakedPlUsd) == newStakedPlUsd) revert LoanRegistrySameValue();
-        $.stakedPlUsd = IStakedPipelineUSD(newStakedPlUsd);
-
-        emit StakedPlUsdSet(newStakedPlUsd);
-    }
-
-    function _setPocket(address newPocket) internal {
-        if (newPocket == address(0)) revert LoanRegistryZeroAddress();
-
-        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
-        if (address($.pocket) == newPocket) revert LoanRegistrySameValue();
-        $.pocket = IPocket(newPocket);
-
-        emit PocketSet(newPocket);
     }
 
     function _setMaxFeeBps(uint32 newMaxFeeBps) internal {
@@ -547,10 +533,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     }
 
     function _carveOut(LoanRegistryStorage storage $, uint256 loanId, uint256 amount) private returns (uint256 moved) {
-        IStakedPipelineUSD _stakedPlUsd = $.stakedPlUsd;
-        if (address(_stakedPlUsd) == address(0)) revert LoanRegistryNotConfigured();
-
-        moved = _stakedPlUsd.carveOut(loanId, amount);
+        moved = $.stakedPlUsd.carveOut(loanId, amount);
         if (moved > amount) revert LoanRegistryCounterpartOverreported(amount, moved);
     }
 
@@ -558,10 +541,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         private
         returns (uint256 burned)
     {
-        IPocket _pocket = $.pocket;
-        if (address(_pocket) == address(0)) revert LoanRegistryNotConfigured();
-
-        burned = _pocket.burn(loanId, amount);
+        burned = $.pocket.burn(loanId, amount);
         if (burned > amount) revert LoanRegistryCounterpartOverreported(amount, burned);
     }
 
@@ -580,27 +560,26 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         }
 
         if (loan.status == LoanStatus.Default && (fees != 0 || repayment.equityDistributed != 0)) {
-            revert LoanRegistryNonZeroOnDefault(loanId);
+            revert LoanRegistryNonZeroOnDefault();
         }
 
         uint256 maxSeniorInterest = _accruedInterest($, loanId);
         if (repayment.seniorInterest > maxSeniorInterest) {
-            revert LoanRegistryInterestExceedsMax(loanId, repayment.seniorInterest, maxSeniorInterest);
+            revert LoanRegistryInterestExceedsMax(maxSeniorInterest);
         }
 
-        uint256 feeCap =
-            Math.mulDiv(repayment.seniorInterest + repayment.mgmtFee + repayment.perfFee, $.maxFeeBps, BPS_ONE);
-        if (fees > feeCap) revert LoanRegistryFeesExceedCap(loanId, fees, feeCap);
+        uint256 feeCap = (repayment.seniorInterest + repayment.mgmtFee + repayment.perfFee) * $.maxFeeBps / BPS_ONE;
+        if (fees > feeCap) revert LoanRegistryFeesExceedCap(feeCap);
 
         uint256 repaidAndWrittenDown = loan.repaid + repayment.seniorPrincipalRepaid + loan.writtenDown;
         if (repaidAndWrittenDown > loan.disbursed) {
-            revert LoanRegistryRepaidExceedsDisbursed(loanId, repaidAndWrittenDown, loan.disbursed);
+            revert LoanRegistryRepaidExceedsDisbursed(repaidAndWrittenDown, loan.disbursed);
         }
 
         uint256 cumulativeOfftakerReceived = $.repaymentTotals[loanId].offtakerReceived + repayment.offtakerReceived;
         uint256 originalOfftakerPrice = $.immutableLoanData[loanId].originalOfftakerPrice;
         if (cumulativeOfftakerReceived > originalOfftakerPrice) {
-            revert LoanRegistryOfftakerExceedsPrice(loanId, cumulativeOfftakerReceived, originalOfftakerPrice);
+            revert LoanRegistryOfftakerExceedsPrice(cumulativeOfftakerReceived, originalOfftakerPrice);
         }
     }
 
@@ -671,7 +650,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     }
 
     function _epochInterest(EconomicsEpoch storage epoch, uint256 principal) private view returns (uint256) {
-        return Math.mulDiv((block.timestamp - epoch.effectiveFrom) * epoch.seniorInterestRate, principal, YEAR * ONE);
+        return (block.timestamp - epoch.effectiveFrom) * epoch.seniorInterestRate * principal / (YEAR * ONE);
     }
 
     function _outstanding(MutableLoanData storage loan) private view returns (uint256) {
@@ -683,7 +662,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         view
         returns (MutableLoanData storage)
     {
-        if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId(loanId);
+        if (loanId >= $.nextLoanId) revert LoanRegistryNonExistentLoanId();
         return $.mutableLoanData[loanId];
     }
 
@@ -693,15 +672,12 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         returns (MutableLoanData storage loan)
     {
         loan = _existingLoan($, loanId);
-        if (repaymentId >= loan.nextRepaymentId) revert LoanRegistryNonExistentRepayment(loanId, repaymentId);
+        if (repaymentId >= loan.nextRepaymentId) revert LoanRegistryNonExistentRepayment();
     }
 
-    function _requireStatusRange(uint256 loanId, LoanStatus currentStatus, LoanStatus min, LoanStatus max)
-        private
-        pure
-    {
+    function _requireStatusRange(LoanStatus currentStatus, LoanStatus min, LoanStatus max) private pure {
         if (currentStatus < min || currentStatus > max) {
-            revert LoanRegistryWrongCurrentStatus(loanId, currentStatus);
+            revert LoanRegistryWrongCurrentStatus(currentStatus);
         }
     }
 

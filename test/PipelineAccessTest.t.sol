@@ -233,14 +233,6 @@ contract PipelineAccessTest is PipelineTestSetUp {
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.setStakedPlUsd(caller);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.setPocket(caller);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         loanRegistry.setMaxFeeBps(1);
 
         vm.prank(caller);
@@ -378,10 +370,6 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.startPrank(caller);
         vm.expectRevert(unauthorized);
         minter.setTreasury(caller);
-        vm.expectRevert(unauthorized);
-        minter.setFactory(caller);
-        vm.expectRevert(unauthorized);
-        minter.setPocket(caller);
         vm.expectRevert(unauthorized);
         minter.setCustodians(custodians);
         vm.expectRevert(unauthorized);

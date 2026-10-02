@@ -33,8 +33,6 @@ contract Configure is Script, Deployments {
 
         vm.startBroadcast();
         if (loanRegistry.capitalWallet() != capitalWallet) loanRegistry.setCapitalWallet(capitalWallet);
-        if (loanRegistry.stakedPlUsd() != stakedPipelineUSDProxy) loanRegistry.setStakedPlUsd(stakedPipelineUSDProxy);
-        if (loanRegistry.pocket() != pocket) loanRegistry.setPocket(pocket);
         if (loanRegistry.maxFeeBps() != maxFeeBps) loanRegistry.setMaxFeeBps(maxFeeBps);
         if (loanRegistry.maxResidual() != maxResidual) loanRegistry.setMaxResidual(maxResidual);
         if (stakedPipelineUSD.pocket() != pocket) stakedPipelineUSD.setPocket(pocket);

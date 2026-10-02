@@ -7,6 +7,7 @@ import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Pau
 
 import {IDealTokenFactory} from "../src/interfaces/IDealTokenFactory.sol";
 import {DealToken} from "../src/dealTokenFactory/DealToken.sol";
+import {DealTokenFactoryUpgradeable} from "../src/dealTokenFactory/DealTokenFactoryUpgradeable.sol";
 import {ILoanRegistry} from "../src/interfaces/ILoanRegistry.sol";
 import {LoanRegistryUpgradeable} from "../src/loanRegistry/LoanRegistryUpgradeable.sol";
 import {IStakedPipelineUSD} from "../src/interfaces/IStakedPipelineUSD.sol";
@@ -53,14 +54,6 @@ contract MinterTest is PipelineTestSetUp {
         minter.setTreasury(other);
 
         vm.expectEmit(address(minter));
-        emit MinterUpgradeable.FactorySet(other);
-        minter.setFactory(other);
-
-        vm.expectEmit(address(minter));
-        emit MinterUpgradeable.PocketSet(other);
-        minter.setPocket(other);
-
-        vm.expectEmit(address(minter));
         emit MinterUpgradeable.CustodiansSet(custodians);
         minter.setCustodians(custodians);
 
@@ -68,8 +61,6 @@ contract MinterTest is PipelineTestSetUp {
 
         MinterUpgradeable.AddressesConfig memory config = minter.addressesConfig();
         assertEq(config.treasury, other);
-        assertEq(config.factory, other);
-        assertEq(config.pocket, other);
         assertEq(minter.custodians(), custodians);
     }
 
@@ -82,14 +73,6 @@ contract MinterTest is PipelineTestSetUp {
         minter.setTreasury(address(0));
         vm.expectRevert(MinterUpgradeable.MinterSameValue.selector);
         minter.setTreasury(treasury);
-
-        vm.expectRevert(MinterUpgradeable.MinterZeroAddress.selector);
-        minter.setPocket(address(0));
-        vm.expectRevert(MinterUpgradeable.MinterSameValue.selector);
-        minter.setPocket(address(pocket));
-
-        vm.expectRevert(MinterUpgradeable.MinterSameValue.selector);
-        minter.setFactory(address(dealTokenFactory));
 
         vm.expectRevert(MinterUpgradeable.MinterZeroAddress.selector);
         minter.setCustodians(custodians);
@@ -141,7 +124,7 @@ contract MinterTest is PipelineTestSetUp {
         _escrow(500, 1);
 
         vm.prank(mintCaller);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterRefHashSeen.selector, _h(1)));
+        vm.expectRevert(MinterUpgradeable.MinterRefHashSeen.selector);
         minter.recordWireIn(address(minter), 500, 0, _h(1));
     }
 
@@ -199,7 +182,7 @@ contract MinterTest is PipelineTestSetUp {
         assertEq(uint8(minter.wireIn(id).status), uint8(MinterUpgradeable.WireInStatus.Assigned));
 
         vm.prank(minterOps);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterWrongWireStatus.selector, id));
+        vm.expectRevert(MinterUpgradeable.MinterWrongWireStatus.selector);
         minter.assignWireIn(id, lp);
     }
 
@@ -219,13 +202,13 @@ contract MinterTest is PipelineTestSetUp {
         assertEq(uint8(minter.wireIn(id).status), uint8(MinterUpgradeable.WireInStatus.Returned));
 
         vm.prank(minterOps);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterWrongWireStatus.selector, id));
+        vm.expectRevert(MinterUpgradeable.MinterWrongWireStatus.selector);
         minter.returnWireIn(id, _h(9));
 
         (, uint256 directId) = _wireInLp(500, 2);
 
         vm.prank(minterOps);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterWrongWireStatus.selector, directId));
+        vm.expectRevert(MinterUpgradeable.MinterWrongWireStatus.selector);
         minter.returnWireIn(directId, _h(10));
     }
 
@@ -242,7 +225,6 @@ contract MinterTest is PipelineTestSetUp {
     function test_disburse() public {
         _escrow(500, 1);
         uint256 loanId = _drawLoan();
-        _registerDeal(loanId);
 
         vm.expectCall(address(dealTokenFactory), abi.encodeCall(IDealTokenFactory.syncDebt, (loanId)));
         vm.expectEmit(address(minter));
@@ -271,29 +253,15 @@ contract MinterTest is PipelineTestSetUp {
         minter.disburse(loanId, 101, 0, _h(2));
     }
 
-    function test_disburseSurvivesFailingSyncDebt() public {
+    function test_disburseRevertsWhenSyncFails() public {
         _escrow(500, 1);
-        uint256 loanId = _drawLoan();
+        uint256 loanId = _drawUnregisteredLoan();
 
-        vm.expectEmit(address(minter));
-        emit MinterUpgradeable.SyncLagging(loanId);
-
-        _disburse(loanId, 300, 2);
-
-        assertEq(loanRegistry.outstanding(loanId), 300);
-    }
-
-    function test_disburseWithoutFactory() public {
-        vm.prank(admin);
-        minter.setFactory(address(0));
-
-        _escrow(500, 1);
-        uint256 loanId = _drawLoan();
-
-        vm.expectCall(address(dealTokenFactory), abi.encodeCall(IDealTokenFactory.syncDebt, (loanId)), 0);
-        _disburse(loanId, 300, 2);
-
-        assertEq(loanRegistry.outstanding(loanId), 300);
+        vm.prank(minterOps);
+        vm.expectRevert(
+            abi.encodeWithSelector(DealTokenFactoryUpgradeable.DealTokenFactoryNotRegistered.selector, loanId)
+        );
+        minter.disburse(loanId, 300, 0, _h(2));
     }
 
     function test_reverseDisburse() public {
@@ -302,7 +270,7 @@ contract MinterTest is PipelineTestSetUp {
         uint256 entryId = _disburse(loanId, 300, 2);
 
         vm.prank(minterOps);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterWrongEntry.selector, entryId));
+        vm.expectRevert(MinterUpgradeable.MinterWrongEntry.selector);
         minter.reverseDisburse(loanId, 299, _h(3), entryId);
 
         vm.expectEmit(address(minter));
@@ -320,7 +288,7 @@ contract MinterTest is PipelineTestSetUp {
         minter.reverseDisburse(loanId, 300, _h(4), entryId);
 
         vm.prank(minterOps);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterWrongEntry.selector, entryId + 1));
+        vm.expectRevert(MinterUpgradeable.MinterWrongEntry.selector);
         minter.reverseDisburse(loanId, 300, _h(5), entryId + 1);
         _assertBacked();
     }
@@ -431,19 +399,11 @@ contract MinterTest is PipelineTestSetUp {
         _assertBacked();
 
         vm.prank(minterOps);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryRepaymentAlreadyReversed.selector, loanId, repaymentId
-            )
-        );
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryRepaymentAlreadyReversed.selector);
         minter.reverseRepay(loanId, repaymentId, _h(5));
 
         vm.prank(minterOps);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryNonExistentRepayment.selector, loanId, repaymentId + 1
-            )
-        );
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentRepayment.selector);
         minter.reverseRepay(loanId, repaymentId + 1, _h(6));
     }
 
@@ -498,7 +458,7 @@ contract MinterTest is PipelineTestSetUp {
         assertEq(plUsd.balanceOf(address(minter)), 300);
 
         vm.prank(minterOps);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterAmountMismatch.selector, 299, 300));
+        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterAmountMismatch.selector, 300));
         minter.settleWireOut(id, 299, 0, _h(2));
 
         vm.expectEmit(address(minter));
@@ -516,7 +476,7 @@ contract MinterTest is PipelineTestSetUp {
         assertEq(wire.amount, 300);
 
         vm.prank(minterOps);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterWrongWireStatus.selector, id));
+        vm.expectRevert(MinterUpgradeable.MinterWrongWireStatus.selector);
         minter.cancelWireOut(id);
     }
 
@@ -597,7 +557,7 @@ contract MinterTest is PipelineTestSetUp {
         _fundCustody(100);
 
         vm.prank(minterOps);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterInsufficientCustody.selector, 101, 100));
+        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterInsufficientCustody.selector, 100));
         minter.openRamp(MinterUpgradeable.RampDirection.UsdcToBank, 101, _h(2));
     }
 
@@ -612,7 +572,7 @@ contract MinterTest is PipelineTestSetUp {
         _assertBacked();
 
         vm.prank(minterOps);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterReceivedExceedsAmount.selector, 401, 400));
+        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterReceivedExceedsAmount.selector, 400));
         minter.closeRamp(id, 401, _h(3));
 
         vm.prank(minterOps);
@@ -622,7 +582,7 @@ contract MinterTest is PipelineTestSetUp {
         assertEq(minter.inFlight(), 0);
 
         vm.prank(minterOps);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterRampClosed.selector, id));
+        vm.expectRevert(MinterUpgradeable.MinterRampClosed.selector);
         minter.closeRamp(id, 400, _h(4));
     }
 
@@ -637,7 +597,7 @@ contract MinterTest is PipelineTestSetUp {
         assertEq(plUsd.balanceOf(address(sPlUsd)), 700);
         _assertBacked();
 
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterWrongEntry.selector, 0));
+        vm.expectRevert(MinterUpgradeable.MinterWrongEntry.selector);
         minter.disbursement(0);
     }
 
@@ -691,7 +651,7 @@ contract MinterTest is PipelineTestSetUp {
         minter.recordCorrection(-116, _h(3), entryId);
 
         vm.prank(minterOps);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterNonExistentCashEntry.selector, 99));
+        vm.expectRevert(MinterUpgradeable.MinterNonExistentCashEntry.selector);
         minter.recordCorrection(1, _h(3), 99);
     }
 
@@ -713,7 +673,7 @@ contract MinterTest is PipelineTestSetUp {
         vm.mockCallRevert(address(usdc), abi.encodeCall(IERC20.balanceOf, (custodianWallet)), "");
 
         vm.prank(minterOps);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterInsufficientCustody.selector, 1, 0));
+        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterInsufficientCustody.selector, 0));
         minter.openRamp(MinterUpgradeable.RampDirection.UsdcToBank, 1, _h(2));
     }
 
@@ -852,13 +812,13 @@ contract MinterTest is PipelineTestSetUp {
     }
 
     function test_viewsRevertForUnknownRecords() public {
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterNonExistentWireIn.selector, 0));
+        vm.expectRevert(MinterUpgradeable.MinterNonExistentWireIn.selector);
         minter.wireIn(0);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterNonExistentWireOut.selector, 0));
+        vm.expectRevert(MinterUpgradeable.MinterNonExistentWireOut.selector);
         minter.wireOut(0);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterNonExistentRamp.selector, 0));
+        vm.expectRevert(MinterUpgradeable.MinterNonExistentRamp.selector);
         minter.ramp(0);
-        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterNonExistentCashEntry.selector, 0));
+        vm.expectRevert(MinterUpgradeable.MinterNonExistentCashEntry.selector);
         minter.disbursement(0);
     }
 
@@ -891,6 +851,11 @@ contract MinterTest is PipelineTestSetUp {
     }
 
     function _drawLoan() private returns (uint256 loanId) {
+        loanId = _drawUnregisteredLoan();
+        _registerDeal(loanId);
+    }
+
+    function _drawUnregisteredLoan() private returns (uint256 loanId) {
         ILoanRegistry.ImmutableLoanData memory economics = ILoanRegistry.ImmutableLoanData({
             borrowerRef: _h(9),
             originalFacilitySize: SENIOR_TRANCHE + 200_000_000,

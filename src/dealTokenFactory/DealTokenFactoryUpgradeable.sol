@@ -60,7 +60,7 @@ abstract contract DealTokenFactoryUpgradeable is AccessManagedUpgradeable, IDeal
 
     function registerDeal(uint256 loanId) external restricted returns (Deal memory dealData) {
         DealTokenFactoryStorage storage $ = _getDealTokenFactoryStorage();
-        $.loanRegistry.outstanding(loanId);
+        _loanOutstanding($, loanId);
         if ($.deals[loanId].debt != address(0)) revert DealTokenFactoryAlreadyRegistered(loanId);
 
         bytes32 salt = bytes32(loanId);
@@ -78,9 +78,8 @@ abstract contract DealTokenFactoryUpgradeable is AccessManagedUpgradeable, IDeal
         DealTokenFactoryStorage storage $ = _getDealTokenFactoryStorage();
         DealToken debt = DealToken(_registeredDeal($, loanId).debt);
 
-        ILoanRegistry _loanRegistry = $.loanRegistry;
-        uint256 target = _loanRegistry.outstanding(loanId);
-        address holder = IERC721(address(_loanRegistry)).ownerOf(loanId);
+        uint256 target = _loanOutstanding($, loanId);
+        address holder = IERC721(address($.loanRegistry)).ownerOf(loanId);
 
         (uint256 previous, uint256 minted, uint256 clawed) = _sync(debt, holder, target);
 
@@ -162,6 +161,10 @@ abstract contract DealTokenFactoryUpgradeable is AccessManagedUpgradeable, IDeal
     {
         dealData = $.deals[loanId];
         if (dealData.debt == address(0)) revert DealTokenFactoryNotRegistered(loanId);
+    }
+
+    function _loanOutstanding(DealTokenFactoryStorage storage $, uint256 loanId) private view returns (uint256) {
+        return $.loanRegistry.outstanding(loanId);
     }
 
     function _predictAddress(string memory prefix, uint256 loanId) private view returns (address) {

@@ -129,7 +129,7 @@ abstract contract PocketUpgradeable is PausableUpgradeable, IPocket {
         pocketData.held += principal;
         pocketData.releasedTotal = releasedTotal - amount;
 
-        if (interest != 0) $.plUsd.burn(interest);
+        if (interest != 0) _burnPlUsd($, interest);
 
         emit Unreleased(loanId, principal, interest);
     }
@@ -142,7 +142,7 @@ abstract contract PocketUpgradeable is PausableUpgradeable, IPocket {
         pocketData.held -= burned;
         pocketData.burnedTotal += burned;
 
-        if (burned != 0) $.plUsd.burn(burned);
+        if (burned != 0) _burnPlUsd($, burned);
 
         emit Burned(loanId, amount, burned);
     }
@@ -169,5 +169,9 @@ abstract contract PocketUpgradeable is PausableUpgradeable, IPocket {
     {
         pocketData = $.pockets[loanId];
         if (pocketData.snapshotBlock == 0) revert PocketNotOpened(loanId);
+    }
+
+    function _burnPlUsd(PocketStorage storage $, uint256 amount) private {
+        $.plUsd.burn(amount);
     }
 }

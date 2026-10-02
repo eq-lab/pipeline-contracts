@@ -112,7 +112,7 @@ contract CollateralRegistryTest is PipelineTestSetUp {
         collateralRegistry.pledge(closedLoanId, _cargoLot(CollateralRegistryUpgradeable.Unit.Dmt, 1, 0));
 
         vm.prank(collateralTrustee);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, 77));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
         collateralRegistry.pledge(77, _cargoLot(CollateralRegistryUpgradeable.Unit.Dmt, 1, 0));
 
         uint256 loanId = _drawLoan();
@@ -220,7 +220,7 @@ contract CollateralRegistryTest is PipelineTestSetUp {
         assertEq(collateralRegistry.floorBps(loanId), 12_000);
 
         vm.prank(collateralTrustee);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, 77));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
         collateralRegistry.setFloor(77, 12_000);
     }
 

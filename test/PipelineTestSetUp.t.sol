@@ -260,8 +260,9 @@ contract PipelineTestSetUp is Test {
 
     function _setupLoanRegistry() private {
         PipelineLoanRegistry implementation = new PipelineLoanRegistry();
-        bytes memory data = abi.encodeWithSelector(
-            PipelineLoanRegistry.initialize.selector, address(authority), "Loan registry name", "Loan registry symbol"
+        bytes memory data = abi.encodeCall(
+            PipelineLoanRegistry.initialize,
+            (address(authority), "Loan registry name", "Loan registry symbol", address(sPlUsd), address(pocket))
         );
         loanRegistry = PipelineLoanRegistry(address(new ERC1967Proxy(address(implementation), data)));
 
@@ -269,8 +270,6 @@ contract PipelineTestSetUp is Test {
         loanRegistry.setCapitalWallet(capitalWallet);
         loanRegistry.setMaxFeeBps(maxFeeBps);
         loanRegistry.setMaxResidual(maxResidual);
-        loanRegistry.setStakedPlUsd(address(sPlUsd));
-        loanRegistry.setPocket(address(pocket));
         vm.stopPrank();
     }
 
