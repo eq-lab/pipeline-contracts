@@ -13,7 +13,10 @@ import {WhitelistRegistry} from "../src/WhitelistRegistry.sol";
 import {PipelineDepositManager} from "../src/PipelineDepositManager.sol";
 import {PipelineWithdrawalQueue} from "../src/PipelineWithdrawalQueue.sol";
 import {PipelineLoanRegistry} from "../src/PipelineLoanRegistry.sol";
-import {PipelineYieldMinter} from "../src/PipelineYieldMinter.sol";
+import {PipelinePocket} from "../src/PipelinePocket.sol";
+import {PipelineMinter} from "../src/PipelineMinter.sol";
+import {PipelineCollateralRegistry} from "../src/PipelineCollateralRegistry.sol";
+import {PipelineDealTokenFactory} from "../src/PipelineDealTokenFactory.sol";
 
 import {WhitelistAccessUpgradeable} from "../src/whitelist/WhitelistAccessUpgradeable.sol";
 import {DepositManagerUpgradeable} from "../src/depositManager/DepositManagerUpgradeable.sol";
@@ -21,6 +24,9 @@ import {RateLimiterUpgradeable} from "../src/depositManager/RateLimiterUpgradeab
 import {WithdrawalQueueUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueUpgradeable.sol";
 import {WithdrawalQueueShutdownUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueShutdownUpgradeable.sol";
 import {VerifiedRequestsQueueUpgradeable} from "../src/requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
+import {MinterUpgradeable} from "../src/minter/MinterUpgradeable.sol";
+import {CollateralRegistryUpgradeable} from "../src/collateralRegistry/CollateralRegistryUpgradeable.sol";
+import {DealTokenFactoryUpgradeable} from "../src/dealTokenFactory/DealTokenFactoryUpgradeable.sol";
 
 import {USDCMock} from "./mocks/USDCMock.t.sol";
 
@@ -29,10 +35,13 @@ contract PipelineTestSetUp is Test {
     WhitelistRegistry public whitelistRegistry;
     PipelineUSD public plUsd;
     StakedPipelineUSD public sPlUsd;
-    PipelineYieldMinter public yieldMinter;
     PipelineDepositManager public depositManager;
     PipelineWithdrawalQueue public withdrawalQueue;
     PipelineLoanRegistry public loanRegistry;
+    PipelinePocket public pocket;
+    PipelineMinter public minter;
+    PipelineCollateralRegistry public collateralRegistry;
+    PipelineDealTokenFactory public dealTokenFactory;
     USDCMock public usdc = new USDCMock();
 
     uint256 depositVerifierPrivateKey = uint256(bytes32("depositVerifier"));
@@ -42,19 +51,28 @@ contract PipelineTestSetUp is Test {
     address public upgrader = makeAddr("upgrader");
     address public pauser = makeAddr("pauser");
     address public whitelistAdmin = makeAddr("whitelistAdmin");
-    address public yieldMinterManager = makeAddr("yieldMinterManager");
     address public depositManagerAdmin = makeAddr("depositManagerAdmin");
     address public depositVerifier = vm.addr(depositVerifierPrivateKey);
     address public queueManager = makeAddr("queueManager");
     address public withdrawalVerifier = vm.addr(withdrawalVerifierPrivateKey);
     address public loanRegistryManager = makeAddr("loanRegistryManager");
+    address public mintCaller = makeAddr("mintCaller");
+    address public minterOps = makeAddr("minterOps");
+    address public collateralTrustee = makeAddr("collateralTrustee");
+    address public collateralValuer = makeAddr("collateralValuer");
+    address public capitalWallet = makeAddr("capitalWallet");
     address public custodian = makeAddr("custodian");
     address public tokenHolder = makeAddr("tokenHolder");
     address public treasury = makeAddr("treasury");
 
     uint256 minDeposit = 1_000_000_000;
+    uint32 maxFeeBps = 2_000;
+    uint256 maxResidual = 1_000;
     RateLimiterUpgradeable.RateLimitConfig public rateLimitConfigDefault = RateLimiterUpgradeable.RateLimitConfig({
         txLimit: 5_000_000_000_000, windowLimit: 10_000_000_000_000, window: 86400 * 7, shift: 86400 * 3
+    });
+    RateLimiterUpgradeable.RateLimitConfig public minterRateLimitConfig = RateLimiterUpgradeable.RateLimitConfig({
+        txLimit: 5_000_000_000_000_000, windowLimit: 10_000_000_000_000_000, window: 86400, shift: 0
     });
 
     function setUp() public virtual {
@@ -63,12 +81,18 @@ contract PipelineTestSetUp is Test {
         _setUpPlUsd();
         _setUpSPlUsd();
         _setupLoanRegistry();
-        _setUpYieldMinter();
+        _setUpCollateralRegistry();
+        _setUpDealTokenFactory();
+        _setUpMinterContract();
 
-        _setUpYieldMinterManager();
         _setUpPauser();
         _setUpWhitelistAdmin();
         _setupLoanRegistryManager();
+        _setUpMinter();
+        _setUpMinterOperators();
+        _setUpLoanRegistryRole();
+        _setUpStakedPlUsdRole();
+        _setUpPlUsdHolders();
 
         _setUpDepositManager();
         _setUpDepositManagerAdmin();
@@ -100,20 +124,85 @@ contract PipelineTestSetUp is Test {
         StakedPipelineUSD implementation = new StakedPipelineUSD();
         bytes memory data = abi.encodeWithSelector(StakedPipelineUSD.initialize.selector, plUsd, address(authority));
         sPlUsd = StakedPipelineUSD(address(new ERC1967Proxy(address(implementation), data)));
+
+        PipelinePocket pocketImplementation = new PipelinePocket();
+        bytes memory pocketData = abi.encodeCall(PipelinePocket.initialize, (address(authority), address(sPlUsd)));
+        pocket = PipelinePocket(address(new ERC1967Proxy(address(pocketImplementation), pocketData)));
+
+        vm.prank(admin);
+        sPlUsd.setPocket(address(pocket));
     }
 
-    function _setUpYieldMinter() private {
-        yieldMinter = new PipelineYieldMinter(address(authority), address(sPlUsd), address(loanRegistry), treasury);
-        uint64 roleId = uint64(bytes8(keccak256("MINTER")));
+    function _setUpMinterContract() private {
+        PipelineMinter implementation = new PipelineMinter();
+        bytes memory data = abi.encodeCall(
+            PipelineMinter.initialize,
+            (
+                address(authority),
+                address(sPlUsd),
+                address(loanRegistry),
+                treasury,
+                address(dealTokenFactory),
+                address(pocket),
+                address(usdc),
+                minterRateLimitConfig
+            )
+        );
+        minter = PipelineMinter(address(new ERC1967Proxy(address(implementation), data)));
+    }
 
-        vm.prank(admin);
-        authority.grantRole(roleId, address(yieldMinter), 0);
+    function _setUpCollateralRegistry() private {
+        PipelineCollateralRegistry implementation = new PipelineCollateralRegistry();
+        bytes memory data =
+            abi.encodeCall(PipelineCollateralRegistry.initialize, (address(authority), address(loanRegistry)));
+        collateralRegistry = PipelineCollateralRegistry(address(new ERC1967Proxy(address(implementation), data)));
+
+        uint64 roleId = uint64(bytes8(keccak256("COLLATERAL_TRUSTEE")));
+
+        bytes4[] memory selectors = new bytes4[](11);
+        selectors[0] = CollateralRegistryUpgradeable.pledge.selector;
+        selectors[1] = CollateralRegistryUpgradeable.setHaircut.selector;
+        selectors[2] = CollateralRegistryUpgradeable.setFloor.selector;
+        selectors[3] = CollateralRegistryUpgradeable.setStage.selector;
+        selectors[4] = CollateralRegistryUpgradeable.setControl.selector;
+        selectors[5] = CollateralRegistryUpgradeable.addDoc.selector;
+        selectors[6] = CollateralRegistryUpgradeable.adjustQuantity.selector;
+        selectors[7] = CollateralRegistryUpgradeable.release.selector;
+        selectors[8] = CollateralRegistryUpgradeable.liquidate.selector;
+        selectors[9] = CollateralRegistryUpgradeable.pause.selector;
+        selectors[10] = CollateralRegistryUpgradeable.unpause.selector;
+
+        vm.startPrank(admin);
+        authority.grantRole(roleId, collateralTrustee, 0);
+        authority.setTargetFunctionRole(address(collateralRegistry), selectors, roleId);
+        vm.stopPrank();
+
+        roleId = uint64(bytes8(keccak256("COLLATERAL_VALUER")));
+
+        selectors = new bytes4[](1);
+        selectors[0] = CollateralRegistryUpgradeable.revalue.selector;
+
+        vm.startPrank(admin);
+        authority.grantRole(roleId, collateralValuer, 0);
+        authority.setTargetFunctionRole(address(collateralRegistry), selectors, roleId);
+        vm.stopPrank();
+    }
+
+    function _setUpDealTokenFactory() private {
+        PipelineDealTokenFactory implementation = new PipelineDealTokenFactory();
+        bytes memory data = abi.encodeCall(
+            PipelineDealTokenFactory.initialize,
+            (address(authority), address(loanRegistry), address(collateralRegistry))
+        );
+        dealTokenFactory = PipelineDealTokenFactory(address(new ERC1967Proxy(address(implementation), data)));
 
         bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = PipelineUSD.mint.selector;
+        selectors[0] = DealTokenFactoryUpgradeable.registerDeal.selector;
 
         vm.prank(admin);
-        authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
+        authority.setTargetFunctionRole(
+            address(dealTokenFactory), selectors, uint64(bytes8(keccak256("LOAN_REGISTRY_MANAGER")))
+        );
     }
 
     function _setUpDepositManager() private {
@@ -175,20 +264,14 @@ contract PipelineTestSetUp is Test {
             PipelineLoanRegistry.initialize.selector, address(authority), "Loan registry name", "Loan registry symbol"
         );
         loanRegistry = PipelineLoanRegistry(address(new ERC1967Proxy(address(implementation), data)));
-    }
 
-    function _setUpYieldMinterManager() private {
-        uint64 roleId = uint64(bytes8(keccak256("YIELD_MINTER_MANAGER")));
-
-        vm.prank(admin);
-        authority.grantRole(roleId, yieldMinterManager, 0);
-
-        bytes4[] memory selectors = new bytes4[](2);
-        selectors[0] = PipelineYieldMinter.mintYield.selector;
-        selectors[1] = PipelineYieldMinter.setTreasury.selector;
-
-        vm.prank(admin);
-        authority.setTargetFunctionRole(address(yieldMinter), selectors, roleId);
+        vm.startPrank(admin);
+        loanRegistry.setCapitalWallet(capitalWallet);
+        loanRegistry.setMaxFeeBps(maxFeeBps);
+        loanRegistry.setMaxResidual(maxResidual);
+        loanRegistry.setStakedPlUsd(address(sPlUsd));
+        loanRegistry.setPocket(address(pocket));
+        vm.stopPrank();
     }
 
     function _setUpPauser() private {
@@ -209,6 +292,12 @@ contract PipelineTestSetUp is Test {
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(sPlUsd), selectors, roleId);
+
+        selectors[0] = PipelinePocket.pause.selector;
+        selectors[1] = PipelinePocket.unpause.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(pocket), selectors, roleId);
     }
 
     function _setUpUpgrader() private {
@@ -237,6 +326,18 @@ contract PipelineTestSetUp is Test {
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(loanRegistry), selectors, roleId);
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(pocket), selectors, roleId);
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(minter), selectors, roleId);
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(collateralRegistry), selectors, roleId);
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(dealTokenFactory), selectors, roleId);
     }
 
     function _setUpWhitelistAdmin() private {
@@ -302,29 +403,154 @@ contract PipelineTestSetUp is Test {
         vm.prank(admin);
         authority.grantRole(roleId, loanRegistryManager, 0);
 
-        bytes4[] memory selectors = new bytes4[](9);
+        bytes4[] memory selectors = new bytes4[](12);
         selectors[0] = PipelineLoanRegistry.drawLoan.selector;
         selectors[1] = PipelineLoanRegistry.updateMutable.selector;
         selectors[2] = PipelineLoanRegistry.rollover.selector;
         selectors[3] = PipelineLoanRegistry.amendEconomics.selector;
         selectors[4] = PipelineLoanRegistry.setDefault.selector;
-        selectors[5] = PipelineLoanRegistry.closeLoan.selector;
-        selectors[6] = PipelineLoanRegistry.recordPayment.selector;
-        selectors[7] = PipelineLoanRegistry.pause.selector;
-        selectors[8] = PipelineLoanRegistry.unpause.selector;
+        selectors[5] = PipelineLoanRegistry.writeDown.selector;
+        selectors[6] = PipelineLoanRegistry.adjustInterest.selector;
+        selectors[7] = PipelineLoanRegistry.cure.selector;
+        selectors[8] = PipelineLoanRegistry.closeLoan.selector;
+        selectors[9] = PipelineLoanRegistry.closeDefaulted.selector;
+        selectors[10] = PipelineLoanRegistry.pause.selector;
+        selectors[11] = PipelineLoanRegistry.unpause.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(loanRegistry), selectors, roleId);
+    }
+
+    function _setUpPlUsdHolders() private {
+        vm.startPrank(whitelistAdmin);
+        whitelistRegistry.allow(address(sPlUsd));
+        whitelistRegistry.allow(address(pocket));
+        whitelistRegistry.allow(address(minter));
+        whitelistRegistry.allow(treasury);
+        vm.stopPrank();
+    }
+
+    function _setUpMinter() private {
+        uint64 roleId = uint64(bytes8(keccak256("PIPELINE_MINTER")));
+
+        vm.prank(admin);
+        authority.grantRole(roleId, address(minter), 0);
+
+        bytes4[] memory selectors = new bytes4[](4);
+        selectors[0] = PipelineLoanRegistry.disburse.selector;
+        selectors[1] = PipelineLoanRegistry.undisburse.selector;
+        selectors[2] = PipelineLoanRegistry.recordPayment.selector;
+        selectors[3] = PipelineLoanRegistry.unrecordPayment.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(loanRegistry), selectors, roleId);
+
+        selectors = new bytes4[](2);
+        selectors[0] = StakedPipelineUSD.pull.selector;
+        selectors[1] = StakedPipelineUSD.burnShares.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(sPlUsd), selectors, roleId);
+
+        selectors[0] = PipelinePocket.release.selector;
+        selectors[1] = PipelinePocket.unrelease.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(pocket), selectors, roleId);
 
         selectors = new bytes4[](1);
-        selectors[0] = PipelineLoanRegistry.markMinted.selector;
+        selectors[0] = PipelineUSD.mint.selector;
+        roleId = uint64(bytes8(keccak256("MINTER")));
 
-        roleId = uint64(bytes8(keccak256("YIELD_MINTER_ROLE")));
+        vm.startPrank(admin);
+        authority.grantRole(roleId, address(minter), 0);
+        authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
+        vm.stopPrank();
+
+        selectors[0] = PipelineUSD.burn.selector;
+        roleId = uint64(bytes8(keccak256("BURNER")));
+
+        vm.startPrank(admin);
+        authority.grantRole(roleId, address(minter), 0);
+        authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
+        vm.stopPrank();
+    }
+
+    function _setUpMinterOperators() private {
+        uint64 roleId = uint64(bytes8(keccak256("MINT_CALLER")));
+
+        bytes4[] memory selectors = new bytes4[](3);
+        selectors[0] = MinterUpgradeable.recordWireIn.selector;
+        selectors[1] = MinterUpgradeable.repay.selector;
+        selectors[2] = MinterUpgradeable.recordIncome.selector;
+
+        vm.startPrank(admin);
+        authority.grantRole(roleId, mintCaller, 0);
+        authority.setTargetFunctionRole(address(minter), selectors, roleId);
+        vm.stopPrank();
+
+        roleId = uint64(bytes8(keccak256("MINTER_OPS")));
+
+        selectors = new bytes4[](14);
+        selectors[0] = MinterUpgradeable.assignWireIn.selector;
+        selectors[1] = MinterUpgradeable.returnWireIn.selector;
+        selectors[2] = MinterUpgradeable.disburse.selector;
+        selectors[3] = MinterUpgradeable.reverseDisburse.selector;
+        selectors[4] = MinterUpgradeable.reverseRepay.selector;
+        selectors[5] = MinterUpgradeable.settleWireOut.selector;
+        selectors[6] = MinterUpgradeable.cancelWireOut.selector;
+        selectors[7] = MinterUpgradeable.openRamp.selector;
+        selectors[8] = MinterUpgradeable.closeRamp.selector;
+        selectors[9] = MinterUpgradeable.recordExpense.selector;
+        selectors[10] = MinterUpgradeable.recordCorrection.selector;
+        selectors[11] = MinterUpgradeable.correctVaultMint.selector;
+        selectors[12] = MinterUpgradeable.pause.selector;
+        selectors[13] = MinterUpgradeable.unpause.selector;
+
+        vm.startPrank(admin);
+        authority.grantRole(roleId, minterOps, 0);
+        authority.setTargetFunctionRole(address(minter), selectors, roleId);
+        vm.stopPrank();
+    }
+
+    function _setUpLoanRegistryRole() private {
+        uint64 roleId = uint64(bytes8(keccak256("LOAN_REGISTRY")));
 
         vm.prank(admin);
-        authority.grantRole(roleId, address(yieldMinter), 0);
+        authority.grantRole(roleId, address(loanRegistry), 0);
+
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = StakedPipelineUSD.carveOut.selector;
 
         vm.prank(admin);
-        authority.setTargetFunctionRole(address(loanRegistry), selectors, roleId);
+        authority.setTargetFunctionRole(address(sPlUsd), selectors, roleId);
+
+        selectors[0] = PipelinePocket.burn.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(pocket), selectors, roleId);
+    }
+
+    function _setUpStakedPlUsdRole() private {
+        uint64 roleId = uint64(bytes8(keccak256("STAKED_PLUSD")));
+
+        vm.prank(admin);
+        authority.grantRole(roleId, address(sPlUsd), 0);
+
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = PipelinePocket.open.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(pocket), selectors, roleId);
+
+        roleId = uint64(bytes8(keccak256("BURNER")));
+
+        vm.prank(admin);
+        authority.grantRole(roleId, address(pocket), 0);
+
+        selectors[0] = PipelineUSD.burn.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(plUsd), selectors, roleId);
     }
 }

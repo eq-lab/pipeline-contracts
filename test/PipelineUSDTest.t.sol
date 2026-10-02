@@ -20,9 +20,6 @@ contract PipelineUSDTest is PipelineTestSetUp {
         vm.prank(whitelistAdmin);
         whitelistRegistry.allow(userTwo);
 
-        vm.prank(whitelistAdmin);
-        whitelistRegistry.allow(address(yieldMinter));
-
         deal(address(plUsd), userOne, 1_000_000_000);
     }
 
@@ -35,7 +32,7 @@ contract PipelineUSDTest is PipelineTestSetUp {
         vm.prank(userOne);
         plUsd.transfer(userTwo, 1_000);
 
-        vm.prank(address(yieldMinter));
+        vm.prank(address(depositManager));
         plUsd.mint(address(withdrawalQueue), 1_000);
 
         vm.prank(address(withdrawalQueue));
@@ -48,7 +45,7 @@ contract PipelineUSDTest is PipelineTestSetUp {
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
         plUsd.transfer(userTwo, 1_000);
 
-        vm.prank(address(yieldMinter));
+        vm.prank(address(depositManager));
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
         plUsd.mint(address(withdrawalQueue), 1_000);
 
@@ -62,7 +59,7 @@ contract PipelineUSDTest is PipelineTestSetUp {
         vm.prank(userOne);
         plUsd.transfer(userTwo, 1_000);
 
-        vm.prank(address(yieldMinter));
+        vm.prank(address(depositManager));
         plUsd.mint(address(withdrawalQueue), 1_000);
 
         vm.prank(address(withdrawalQueue));
