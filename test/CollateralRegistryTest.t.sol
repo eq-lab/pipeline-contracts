@@ -591,7 +591,7 @@ contract CollateralRegistryTest is PipelineTestSetUp {
         assertEq(collateralRegistry.coverage(loanId), 20_000);
 
         skip(YEAR);
-        uint256 debt = 22_500 * UNIT + loanRegistry.accruedInterest(loanId);
+        uint256 debt = 22_500 * UNIT + loanRegistry.loanMoney(loanId).accruedInterest;
         assertEq(collateralRegistry.coverage(loanId), 45_000 * UNIT * 10_000 / debt);
 
         vm.prank(collateralValuer);

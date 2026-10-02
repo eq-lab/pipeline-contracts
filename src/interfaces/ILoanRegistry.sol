@@ -62,11 +62,6 @@ interface ILoanRegistry {
         uint256 oetAlloc;
     }
 
-    struct Disbursement {
-        uint256 amount;
-        uint256 remaining;
-    }
-
     struct LoanMoney {
         uint256 disbursed;
         uint256 repaid;
@@ -82,13 +77,15 @@ interface ILoanRegistry {
 
     function updateMutable(uint256 loanId, LoanStatus newStatus, string calldata metadataURI) external;
 
-    function disburse(uint256 loanId, uint256 amount) external returns (uint256 index);
+    function disburse(uint256 loanId, uint256 amount) external;
 
-    function undisburse(uint256 loanId, uint256 index, uint256 amount) external;
+    function undisburse(uint256 loanId, uint256 amount) external;
 
-    function recordPayment(uint256 loanId, RepaymentData calldata repayment) external returns (uint256 repaymentId);
+    function recordPayment(uint256 loanId, RepaymentData calldata repayment)
+        external
+        returns (uint256 repaymentId, bool carvedOut);
 
-    function unrecordPayment(uint256 loanId, uint256 repaymentId) external returns (RepaymentData memory);
+    function unrecordPayment(uint256 loanId, uint256 repaymentId) external returns (uint256 principal, uint256 interest);
 
     function rollover(uint256 loanId, uint32 newRate, uint64 newMaturityTimestamp) external;
 
@@ -108,10 +105,8 @@ interface ILoanRegistry {
 
     function status(uint256 loanId) external view returns (LoanStatus);
     function outstanding(uint256 loanId) external view returns (uint256);
-    function accruedInterest(uint256 loanId) external view returns (uint256);
     function loanMoney(uint256 loanId) external view returns (LoanMoney memory);
     function outstandingTotal() external view returns (uint256);
     function unabsorbedTotal() external view returns (uint256);
-    function repaymentData(uint256 loanId, uint256 repaymentId) external view returns (RepaymentData memory);
     function economicsEpoch(uint256 loanId, uint256 epochId) external view returns (EconomicsEpoch memory);
 }

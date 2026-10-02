@@ -15,9 +15,22 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     using SafeCast for uint256;
     using SafeCast for int256;
 
-    uint256 public constant ONE = 1_000_000;
-    uint256 public constant YEAR = 31557600;
-    uint256 public constant BPS_ONE = 10_000;
+    uint256 private constant ONE = 1_000_000;
+    uint256 private constant YEAR = 31557600;
+    uint256 private constant BPS_ONE = 10_000;
+
+    struct RecordedRepayment {
+        uint256 offtakerReceived;
+        uint256 seniorPrincipalRepaid;
+        uint256 seniorInterest;
+        uint256 interestFees;
+    }
+
+    struct RepaymentTotals {
+        uint256 offtakerReceived;
+        uint256 seniorInterest;
+        uint256 interestFees;
+    }
 
     event LoanDrawn(uint256 indexed loanId, string metadataURI);
     event StatusUpdated(uint256 indexed loanId, LoanStatus indexed newStatus);
@@ -26,9 +39,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     event PaymentRecorded(
         uint256 indexed loanId, uint256 indexed repaymentId, RepaymentData repayment, uint256 outstanding
     );
-    event PaymentUnrecorded(
-        uint256 indexed loanId, uint256 indexed repaymentId, RepaymentData repayment, uint256 outstanding
-    );
+    event PaymentUnrecorded(uint256 indexed loanId, uint256 indexed repaymentId, uint256 outstanding);
     event LoanDefaulted(uint256 indexed loanId, uint256 outstanding, uint256 moved);
     event LoanWrittenDown(
         uint256 indexed loanId, uint256 amount, uint256 outstanding, uint256 burned, uint256 unabsorbed
@@ -59,8 +70,6 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         uint256 loanId, uint256 cumulativeOfftakerReceived, uint256 originalOfftakerPrice
     );
     error LoanRegistryDisbursementExceedsTranche(uint256 loanId, uint256 disbursed, uint256 originalSeniorTranche);
-    error LoanRegistryNonExistentDisbursement(uint256 loanId, uint256 index);
-    error LoanRegistryAmountExceedsRemaining(uint256 loanId, uint256 index, uint256 amount, uint256 remaining);
     error LoanRegistryAmountExceedsOutstanding(uint256 loanId, uint256 amount, uint256 outstanding);
     error LoanRegistryRepaidExceedsDisbursed(uint256 loanId, uint256 repaidAndWrittenDown, uint256 disbursed);
     error LoanRegistryFeesExceedCap(uint256 loanId, uint256 fees, uint256 feeCap);
@@ -80,19 +89,18 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     /// @custom:storage-location erc7201:pipeline.storage.LoanRegistry
     struct LoanRegistryStorage {
         uint256 nextLoanId;
+        uint256 maxResidual;
+        uint256 outstandingTotal;
+        uint256 unabsorbedTotal;
         address capitalWallet;
         IStakedPipelineUSD stakedPlUsd;
         IPocket pocket;
         uint32 maxFeeBps;
-        uint256 maxResidual;
-        uint256 outstandingTotal;
-        uint256 unabsorbedTotal;
         mapping(uint256 loanId => ImmutableLoanData) immutableLoanData;
         mapping(uint256 loanId => MutableLoanData) mutableLoanData;
-        mapping(uint256 loanId => RepaymentData) cumulativeRepaymentData;
-        mapping(uint256 loanId => mapping(uint256 repaymentId => RepaymentData)) repaymentData;
+        mapping(uint256 loanId => RepaymentTotals) repaymentTotals;
+        mapping(uint256 loanId => mapping(uint256 repaymentId => RecordedRepayment)) repayments;
         mapping(uint256 loanId => mapping(uint256 repaymentId => bool)) reversedRepayments;
-        mapping(uint256 loanId => Disbursement[]) disbursements;
         mapping(uint256 loanId => mapping(uint256 epochId => EconomicsEpoch)) economicsEpochs;
     }
 
@@ -140,28 +148,6 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         return _existingLoan(_getLoanRegistryStorage(), loanId);
     }
 
-    function cumulativeRepaymentData(uint256 loanId) external view returns (RepaymentData memory) {
-        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
-        _existingLoan($, loanId);
-        return $.cumulativeRepaymentData[loanId];
-    }
-
-    function repaymentData(uint256 loanId, uint256 repaymentId) external view returns (RepaymentData memory) {
-        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
-        _existingRepayment($, loanId, repaymentId);
-        return $.repaymentData[loanId][repaymentId];
-    }
-
-    function isRepaymentReversed(uint256 loanId, uint256 repaymentId) external view returns (bool) {
-        return _getLoanRegistryStorage().reversedRepayments[loanId][repaymentId];
-    }
-
-    function disbursements(uint256 loanId) external view returns (Disbursement[] memory) {
-        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
-        _existingLoan($, loanId);
-        return $.disbursements[loanId];
-    }
-
     function economicsEpoch(uint256 loanId, uint256 epochId) external view returns (EconomicsEpoch memory) {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         _existingLoan($, loanId);
@@ -174,12 +160,6 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
 
     function outstanding(uint256 loanId) external view returns (uint256) {
         return _outstanding(_existingLoan(_getLoanRegistryStorage(), loanId));
-    }
-
-    function accruedInterest(uint256 loanId) external view returns (uint256) {
-        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
-        _existingLoan($, loanId);
-        return _accruedInterest($, loanId);
     }
 
     function loanMoney(uint256 loanId) external view returns (LoanMoney memory) {
@@ -278,7 +258,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         }
     }
 
-    function _disburse(uint256 loanId, uint256 amount) internal whenNotPaused returns (uint256 index) {
+    function _disburse(uint256 loanId, uint256 amount) internal whenNotPaused {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         MutableLoanData storage loan = _existingLoan($, loanId);
 
@@ -296,18 +276,13 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
 
         loan.disbursed = disbursed;
         if (isFirst) loan.status = LoanStatus.Performing;
-
-        Disbursement[] storage _disbursements = $.disbursements[loanId];
-        index = _disbursements.length;
-        _disbursements.push(Disbursement({amount: amount, remaining: amount}));
-
         $.outstandingTotal += amount;
 
         emit Disbursed(loanId, amount, _outstanding(loan));
         if (isFirst) emit StatusUpdated(loanId, LoanStatus.Performing);
     }
 
-    function _undisburse(uint256 loanId, uint256 index, uint256 amount) internal whenNotPaused {
+    function _undisburse(uint256 loanId, uint256 amount) internal whenNotPaused {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         MutableLoanData storage loan = _existingLoan($, loanId);
 
@@ -318,16 +293,8 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         uint256 loanOutstanding = _outstanding(loan);
         if (amount > loanOutstanding) revert LoanRegistryAmountExceedsOutstanding(loanId, amount, loanOutstanding);
 
-        Disbursement[] storage _disbursements = $.disbursements[loanId];
-        if (index >= _disbursements.length) revert LoanRegistryNonExistentDisbursement(loanId, index);
-
-        Disbursement storage disbursement = _disbursements[index];
-        uint256 remaining = disbursement.remaining;
-        if (amount > remaining) revert LoanRegistryAmountExceedsRemaining(loanId, index, amount, remaining);
-
         _advanceEpoch($, loanId);
 
-        disbursement.remaining = remaining - amount;
         loan.disbursed -= amount;
         $.outstandingTotal -= amount;
 
@@ -337,13 +304,14 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     function _recordPayment(uint256 loanId, RepaymentData calldata repayment)
         internal
         whenNotPaused
-        returns (uint256 repaymentId)
+        returns (uint256 repaymentId, bool carvedOut)
     {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         MutableLoanData storage loan = _existingLoan($, loanId);
 
         _requireStatusRange(loanId, loan.status, LoanStatus.Performing, LoanStatus.Default);
         _validateRepayment($, loanId, loan, repayment);
+        carvedOut = loan.carvedOut;
 
         _advanceEpoch($, loanId);
 
@@ -354,16 +322,18 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         }
         $.outstandingTotal -= repayment.seniorPrincipalRepaid;
 
-        RepaymentData storage cumulative = $.cumulativeRepaymentData[loanId];
-        cumulative.offtakerReceived += repayment.offtakerReceived;
-        cumulative.seniorPrincipalRepaid += repayment.seniorPrincipalRepaid;
-        cumulative.seniorInterest += repayment.seniorInterest;
-        cumulative.equityDistributed += repayment.equityDistributed;
-        cumulative.mgmtFee += repayment.mgmtFee;
-        cumulative.perfFee += repayment.perfFee;
-        cumulative.oetAlloc += repayment.oetAlloc;
+        uint256 interestFees = repayment.mgmtFee + repayment.perfFee;
+        RepaymentTotals storage totals = $.repaymentTotals[loanId];
+        totals.offtakerReceived += repayment.offtakerReceived;
+        totals.seniorInterest += repayment.seniorInterest;
+        totals.interestFees += interestFees;
 
-        $.repaymentData[loanId][repaymentId] = repayment;
+        $.repayments[loanId][repaymentId] = RecordedRepayment({
+            offtakerReceived: repayment.offtakerReceived,
+            seniorPrincipalRepaid: repayment.seniorPrincipalRepaid,
+            seniorInterest: repayment.seniorInterest,
+            interestFees: interestFees
+        });
 
         emit PaymentRecorded(loanId, repaymentId, repayment, _outstanding(loan));
     }
@@ -371,7 +341,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     function _unrecordPayment(uint256 loanId, uint256 repaymentId)
         internal
         whenNotPaused
-        returns (RepaymentData memory repayment)
+        returns (uint256 principal, uint256 interest)
     {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         MutableLoanData storage loan = _existingRepayment($, loanId, repaymentId);
@@ -382,23 +352,21 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         }
 
         $.reversedRepayments[loanId][repaymentId] = true;
-        repayment = $.repaymentData[loanId][repaymentId];
+        RecordedRepayment storage repayment = $.repayments[loanId][repaymentId];
 
         _advanceEpoch($, loanId);
 
-        loan.repaid -= repayment.seniorPrincipalRepaid;
-        $.outstandingTotal += repayment.seniorPrincipalRepaid;
+        principal = repayment.seniorPrincipalRepaid;
+        interest = repayment.seniorInterest;
+        loan.repaid -= principal;
+        $.outstandingTotal += principal;
 
-        RepaymentData storage cumulative = $.cumulativeRepaymentData[loanId];
-        cumulative.offtakerReceived -= repayment.offtakerReceived;
-        cumulative.seniorPrincipalRepaid -= repayment.seniorPrincipalRepaid;
-        cumulative.seniorInterest -= repayment.seniorInterest;
-        cumulative.equityDistributed -= repayment.equityDistributed;
-        cumulative.mgmtFee -= repayment.mgmtFee;
-        cumulative.perfFee -= repayment.perfFee;
-        cumulative.oetAlloc -= repayment.oetAlloc;
+        RepaymentTotals storage totals = $.repaymentTotals[loanId];
+        totals.offtakerReceived -= repayment.offtakerReceived;
+        totals.seniorInterest -= interest;
+        totals.interestFees -= repayment.interestFees;
 
-        emit PaymentUnrecorded(loanId, repaymentId, repayment, _outstanding(loan));
+        emit PaymentUnrecorded(loanId, repaymentId, _outstanding(loan));
     }
 
     function _rollover(uint256 loanId, uint32 newRate, uint64 newMaturityTimestamp) internal whenNotPaused {
@@ -567,7 +535,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     }
 
     function _close(LoanRegistryStorage storage $, uint256 loanId, ClosureReason reason, uint256 waived) private {
-        uint256 paid = $.cumulativeRepaymentData[loanId].seniorInterest;
+        uint256 paid = $.repaymentTotals[loanId].seniorInterest;
 
         MutableLoanData storage loan = $.mutableLoanData[loanId];
         loan.status = LoanStatus.Closed;
@@ -629,8 +597,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
             revert LoanRegistryRepaidExceedsDisbursed(loanId, repaidAndWrittenDown, loan.disbursed);
         }
 
-        uint256 cumulativeOfftakerReceived =
-            $.cumulativeRepaymentData[loanId].offtakerReceived + repayment.offtakerReceived;
+        uint256 cumulativeOfftakerReceived = $.repaymentTotals[loanId].offtakerReceived + repayment.offtakerReceived;
         uint256 originalOfftakerPrice = $.immutableLoanData[loanId].originalOfftakerPrice;
         if (cumulativeOfftakerReceived > originalOfftakerPrice) {
             revert LoanRegistryOfftakerExceedsPrice(loanId, cumulativeOfftakerReceived, originalOfftakerPrice);
@@ -696,8 +663,8 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         EconomicsEpoch storage lastEpoch = $.economicsEpochs[loanId][economicsEpochsCount - 1];
         uint256 gross = lastEpoch.accruedInterest + _epochInterest(lastEpoch, _outstanding(loan));
 
-        RepaymentData storage cumulative = $.cumulativeRepaymentData[loanId];
-        uint256 recorded = cumulative.seniorInterest + cumulative.mgmtFee + cumulative.perfFee;
+        RepaymentTotals storage totals = $.repaymentTotals[loanId];
+        uint256 recorded = totals.seniorInterest + totals.interestFees;
 
         int256 net = gross.toInt256() - recorded.toInt256() + loan.interestAdjustment;
         return net > 0 ? net.toUint256() : 0;

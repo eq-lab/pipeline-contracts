@@ -34,23 +34,27 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
         _updateMutable(loanId, newStatus, metadataURI);
     }
 
-    function disburse(uint256 loanId, uint256 amount) external restricted returns (uint256 index) {
-        return _disburse(loanId, amount);
+    function disburse(uint256 loanId, uint256 amount) external restricted {
+        _disburse(loanId, amount);
     }
 
-    function undisburse(uint256 loanId, uint256 index, uint256 amount) external restricted {
-        _undisburse(loanId, index, amount);
+    function undisburse(uint256 loanId, uint256 amount) external restricted {
+        _undisburse(loanId, amount);
     }
 
     function recordPayment(uint256 loanId, RepaymentData calldata repayment)
         external
         restricted
-        returns (uint256 repaymentId)
+        returns (uint256 repaymentId, bool carvedOut)
     {
         return _recordPayment(loanId, repayment);
     }
 
-    function unrecordPayment(uint256 loanId, uint256 repaymentId) external restricted returns (RepaymentData memory) {
+    function unrecordPayment(uint256 loanId, uint256 repaymentId)
+        external
+        restricted
+        returns (uint256 principal, uint256 interest)
+    {
         return _unrecordPayment(loanId, repaymentId);
     }
 
