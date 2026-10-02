@@ -3,4 +3,6 @@ pragma solidity ^0.8.34;
 
 interface IDealTokenFactory {
     function syncDebt(uint256 loanId) external;
+
+    function syncCargo(uint256 loanId) external;
 }
