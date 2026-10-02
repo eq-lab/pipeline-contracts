@@ -21,11 +21,11 @@ contract SetupMinters is Script, Deployments {
 
         (address pipelineUSD,) = readUpgradeable("PipelineUSD");
         (address depositManager,) = readUpgradeable("PipelineDepositManager");
-        address yieldMinter = readPlain("PipelineYieldMinter");
+        (address minter,) = readUpgradeable("PipelineMinter");
 
         vm.startBroadcast();
         accessManager.setTargetFunctionRole(pipelineUSD, selectors, MINTER_ROLE_ID);
-        accessManager.grantRole(MINTER_ROLE_ID, yieldMinter, 0);
+        accessManager.grantRole(MINTER_ROLE_ID, minter, 0);
         accessManager.grantRole(MINTER_ROLE_ID, depositManager, 0);
         vm.stopBroadcast();
     }

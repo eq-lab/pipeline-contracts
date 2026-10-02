@@ -21,10 +21,14 @@ contract SetupBurners is Script, Deployments {
 
         (address pipelineUSD,) = readUpgradeable("PipelineUSD");
         (address withdrawalQueue,) = readUpgradeable("PipelineWithdrawalQueue");
+        (address minter,) = readUpgradeable("PipelineMinter");
+        (address pocket,) = readUpgradeable("PipelinePocket");
 
         vm.startBroadcast();
         accessManager.setTargetFunctionRole(pipelineUSD, selectors, BURNER_ROLE_ID);
         accessManager.grantRole(BURNER_ROLE_ID, withdrawalQueue, 0);
+        accessManager.grantRole(BURNER_ROLE_ID, minter, 0);
+        accessManager.grantRole(BURNER_ROLE_ID, pocket, 0);
         vm.stopBroadcast();
     }
 }

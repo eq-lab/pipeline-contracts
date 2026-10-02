@@ -2,32 +2,28 @@
 pragma solidity ^0.8.34;
 
 import {Upgrades, Options} from "openzeppelin-foundry-upgrades/Upgrades.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {BaseDeployer} from "../base/BaseDeployer.sol";
 
-import {StakedPipelineUSD} from "../../src/StakedPipelineUSD.sol";
+import {PipelinePocket} from "../../src/PipelinePocket.sol";
 
-contract DeployStakedPipelineUSD is BaseDeployer {
+contract DeployPocket is BaseDeployer {
     constructor(string memory tag) BaseDeployer(tag) {}
 
     function key() public pure override returns (string memory) {
-        return "StakedPipelineUSD";
+        return "PipelinePocket";
     }
 
     function _deployUpgradeable() internal override returns (address) {
-        (address pipelineUSD,) = readUpgradeable("PipelineUSD");
         address authority = readPlain("AccessManager");
+        (address stakedPipelineUSD,) = readUpgradeable("StakedPipelineUSD");
 
         Options memory opts;
         return Upgrades.deployUUPSProxy(
-            "StakedPipelineUSD.sol",
-            abi.encodeCall(StakedPipelineUSD.initialize, (IERC20(pipelineUSD), authority)),
-            opts
+            "PipelinePocket.sol", abi.encodeCall(PipelinePocket.initialize, (authority, stakedPipelineUSD)), opts
         );
     }
 
-    /// @notice Standalone entry point: `forge script script/deployers/DeployStakedPipelineUSD.sol --sig "run(string)" <tag>`
     function run(string memory tag) external returns (address proxy, address impl) {
         deploymentTag = tag;
         return deployUpgradeable();

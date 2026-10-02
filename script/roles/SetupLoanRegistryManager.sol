@@ -7,6 +7,7 @@ import {Deployments} from "../base/Deployments.sol";
 
 import {AccessManager} from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import {PipelineLoanRegistry} from "../../src/PipelineLoanRegistry.sol";
+import {DealTokenFactoryUpgradeable} from "../../src/dealTokenFactory/DealTokenFactoryUpgradeable.sol";
 
 contract SetupLoanRegistryManager is Script, Deployments {
     uint64 constant LOAN_REGISTRY_MANAGER_ADMIN_ROLE_ID = uint64(bytes8(keccak256("LOAN_REGISTRY_MANAGER_ADMIN_ROLE")));
@@ -16,21 +17,29 @@ contract SetupLoanRegistryManager is Script, Deployments {
 
         AccessManager accessManager = AccessManager(readPlain("AccessManager"));
 
-        bytes4[] memory selectors = new bytes4[](7);
+        bytes4[] memory selectors = new bytes4[](10);
         selectors[0] = PipelineLoanRegistry.drawLoan.selector;
         selectors[1] = PipelineLoanRegistry.updateMutable.selector;
         selectors[2] = PipelineLoanRegistry.rollover.selector;
         selectors[3] = PipelineLoanRegistry.amendEconomics.selector;
         selectors[4] = PipelineLoanRegistry.setDefault.selector;
-        selectors[5] = PipelineLoanRegistry.closeLoan.selector;
-        selectors[6] = PipelineLoanRegistry.recordPayment.selector;
+        selectors[5] = PipelineLoanRegistry.writeDown.selector;
+        selectors[6] = PipelineLoanRegistry.adjustInterest.selector;
+        selectors[7] = PipelineLoanRegistry.cure.selector;
+        selectors[8] = PipelineLoanRegistry.closeLoan.selector;
+        selectors[9] = PipelineLoanRegistry.closeDefaulted.selector;
+
+        bytes4[] memory factorySelectors = new bytes4[](1);
+        factorySelectors[0] = DealTokenFactoryUpgradeable.registerDeal.selector;
 
         (address loanRegistry,) = readUpgradeable("PipelineLoanRegistry");
+        (address dealTokenFactory,) = readUpgradeable("PipelineDealTokenFactory");
         address roleHolder = address(uint160(uint256(valueOf("LoanRegistryManager", false))));
-        uint32 delay = uint32(uint256(valueOf("LoanRegistryManager__Delay", false)));
+        uint32 delay = uint32(uint256(valueOf("LoanRegistryManager__Delay", true)));
 
         vm.startBroadcast();
         accessManager.setTargetFunctionRole(loanRegistry, selectors, LOAN_REGISTRY_MANAGER_ADMIN_ROLE_ID);
+        accessManager.setTargetFunctionRole(dealTokenFactory, factorySelectors, LOAN_REGISTRY_MANAGER_ADMIN_ROLE_ID);
         accessManager.grantRole(LOAN_REGISTRY_MANAGER_ADMIN_ROLE_ID, roleHolder, delay);
         vm.stopBroadcast();
     }
