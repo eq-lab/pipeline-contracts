@@ -21,9 +21,9 @@ contract SetupEmergencyRole is Script, Deployments {
         selectors[0] = RateLimiterUpgradeable.decreaseTxLimit.selector;
         selectors[1] = RateLimiterUpgradeable.decreaseWindowLimit.selector;
 
-        (address depositManager,) = readUpgradeable("DepositManager");
+        (address depositManager,) = readUpgradeable("PipelineDepositManager");
         address roleHolder = address(uint160(uint256(valueOf("EmergencyRole", false))));
-        uint32 delay = uint32(uint256(valueOf("EmergencyRole__Delay", false)));
+        uint32 delay = uint32(uint256(valueOf("EmergencyRole__Delay", true)));
 
         vm.startBroadcast();
         accessManager.setTargetFunctionRole(depositManager, selectors, EMERGENCY_ROLE_ID);
