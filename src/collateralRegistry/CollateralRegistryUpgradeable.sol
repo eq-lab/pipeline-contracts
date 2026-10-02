@@ -229,7 +229,7 @@ abstract contract CollateralRegistryUpgradeable is AccessManagedUpgradeable, Pau
         returns (uint256 lotId)
     {
         CollateralRegistryStorage storage $ = _getCollateralRegistryStorage();
-        if ($.loanRegistry.status(loanId) == ILoanRegistry.LoanStatus.Closed) {
+        if (_loanStatus($, loanId) == ILoanRegistry.LoanStatus.Closed) {
             revert CollateralRegistryLoanClosed(loanId);
         }
 
@@ -411,7 +411,7 @@ abstract contract CollateralRegistryUpgradeable is AccessManagedUpgradeable, Pau
         returns (uint256 saleId)
     {
         CollateralRegistryStorage storage $ = _getCollateralRegistryStorage();
-        ILoanRegistry.LoanStatus loanStatus = $.loanRegistry.status(loanId);
+        ILoanRegistry.LoanStatus loanStatus = _loanStatus($, loanId);
         if (loanStatus != ILoanRegistry.LoanStatus.Default) {
             revert CollateralRegistryWrongLoanStatus(loanId, loanStatus);
         }
@@ -500,8 +500,8 @@ abstract contract CollateralRegistryUpgradeable is AccessManagedUpgradeable, Pau
     }
 
     function coverage(uint256 loanId) public view returns (uint32) {
-        ILoanRegistry _loanRegistry = _getCollateralRegistryStorage().loanRegistry;
-        uint256 debt = _loanRegistry.outstanding(loanId) + _loanRegistry.accruedInterest(loanId);
+        ILoanRegistry.LoanMoney memory money = _getCollateralRegistryStorage().loanRegistry.loanMoney(loanId);
+        uint256 debt = money.outstanding + money.accruedInterest;
         if (debt == 0) return type(uint32).max;
 
         uint256 bps = collateralValue(loanId) * BPS_ONE / debt;
@@ -532,6 +532,14 @@ abstract contract CollateralRegistryUpgradeable is AccessManagedUpgradeable, Pau
         $.loanRegistry = ILoanRegistry(newLoanRegistry);
 
         emit LoanRegistrySet(newLoanRegistry);
+    }
+
+    function _loanStatus(CollateralRegistryStorage storage $, uint256 loanId)
+        private
+        view
+        returns (ILoanRegistry.LoanStatus)
+    {
+        return $.loanRegistry.status(loanId);
     }
 
     function _checkCoverage(CollateralRegistryStorage storage $, uint256 loanId) private {

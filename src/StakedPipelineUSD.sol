@@ -89,7 +89,7 @@ contract StakedPipelineUSD is
         assets = previewRedeem(shares);
 
         _burn(owner, shares);
-        IERC20(asset()).safeTransfer(msg.sender, assets);
+        _transferAssets(msg.sender, assets);
 
         emit Withdraw(msg.sender, msg.sender, owner, assets, shares);
         emit SharesBurned(owner, shares, assets);
@@ -159,7 +159,11 @@ contract StakedPipelineUSD is
 
     function _sendAssets(address to, uint256 amount) private returns (uint256 sent) {
         sent = Math.min(amount, totalAssets());
-        if (sent != 0) IERC20(asset()).safeTransfer(to, sent);
+        if (sent != 0) _transferAssets(to, sent);
+    }
+
+    function _transferAssets(address to, uint256 amount) private {
+        IERC20(asset()).safeTransfer(to, amount);
     }
 
     function _update(address from, address to, uint256 value)

@@ -18,10 +18,14 @@ contract DeployLoanRegistry is BaseDeployer {
         address authority = readPlain("AccessManager");
         string memory name = string(abi.encode(valueOf("LoanRegistry__erc721Name", false)));
         string memory symbol = string(abi.encode(valueOf("LoanRegistry__erc721Symbol", false)));
+        (address stakedPipelineUSD,) = readUpgradeable("StakedPipelineUSD");
+        (address pocket,) = readUpgradeable("PipelinePocket");
 
         Options memory opts;
         return Upgrades.deployUUPSProxy(
-            "PipelineLoanRegistry.sol", abi.encodeCall(PipelineLoanRegistry.initialize, (authority, name, symbol)), opts
+            "PipelineLoanRegistry.sol",
+            abi.encodeCall(PipelineLoanRegistry.initialize, (authority, name, symbol, stakedPipelineUSD, pocket)),
+            opts
         );
     }
 

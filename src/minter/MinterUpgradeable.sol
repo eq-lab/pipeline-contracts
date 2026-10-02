@@ -46,72 +46,49 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     }
 
     struct WireIn {
-        address receiver;
         WireInStatus status;
-        uint64 valueDate;
         uint256 amount;
-        bytes32 refHash;
-        bytes32 lpRef;
-        bytes32 returnRef;
     }
 
     struct WireOut {
         address lp;
         WireOutStatus status;
-        uint64 requestedAt;
         uint256 amount;
-        bytes32 refHash;
     }
 
     struct Ramp {
         RampDirection direction;
         bool closed;
-        uint64 openedAt;
-        uint64 closedAt;
         uint256 amount;
-        uint256 received;
     }
 
-    struct CashEntry {
-        int256 delta;
-        CashReason reason;
-        bool reversed;
-        uint64 valueDate;
+    struct Disbursement {
         uint256 loanId;
-        uint256 original;
-        bytes32 refHash;
+        uint256 amount;
+        bool reversed;
     }
 
     struct Repayment {
-        uint256 cash;
-        uint256 principal;
-        uint256 interestMinted;
         uint256 feeShares;
-        uint256 saleId;
+        uint256 fees;
+        uint256 released;
         bool carvedOut;
-        bool reversed;
-        bool recorded;
     }
 
-    struct Custody {
-        address custodian;
-        uint256 balance;
-    }
-
-    struct PoolState {
-        Custody[] custody;
-        bool readFailed;
-        uint256 bankCash;
-        uint256 inFlight;
-        uint256 outstandingTotal;
-        uint256 unabsorbedTotal;
-        uint256 totalAssets;
+    struct AddressesConfig {
+        address plUsd;
+        address stakedPlUsd;
+        address loanRegistry;
+        address pocket;
+        address usdc;
+        address treasury;
+        address factory;
     }
 
     event WireInRecorded(
-        uint256 indexed id, address indexed receiver, uint256 amount, uint64 valueDate, bytes32 refHash, bytes32 lpRef
+        uint256 indexed id, address indexed receiver, uint256 amount, uint64 valueDate, bytes32 refHash
     );
-    event WireInAssigned(uint256 indexed id, address indexed receiver, bytes32 lpRef);
+    event WireInAssigned(uint256 indexed id, address indexed receiver);
     event WireInReturned(uint256 indexed id, uint256 amount, bytes32 refHash);
     event CashDisbursed(uint256 indexed loanId, uint256 entryId, uint256 amount, uint64 valueDate, bytes32 refHash);
     event CashDisbursementReversed(
@@ -134,34 +111,30 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     event RampOpened(uint256 indexed id, RampDirection direction, uint256 amount, bytes32 refHash);
     event RampClosed(uint256 indexed id, uint256 received, uint256 loss, bytes32 refHash);
     event CashRecorded(CashReason indexed reason, uint256 entryId, int256 delta, uint64 valueDate, bytes32 refHash);
+    event CashCorrected(uint256 indexed originalId, uint256 entryId, int256 delta, bytes32 reasonHash);
     event MintCorrected(uint256 amount, bytes32 refHash);
     event LossAbsorbed(uint256 requested, uint256 pulled);
-    event SyncLagging(uint256 indexed loanId);
-    event Snapshot(uint256 indexed blockNumber, PoolState pool);
     event TreasurySet(address treasury);
-    event FactorySet(address factory);
-    event PocketSet(address pocket);
     event CustodiansSet(address[] custodians);
 
     error MinterZeroAddress();
     error MinterSameValue();
     error MinterInvalidAmount();
     error MinterMissingRef();
-    error MinterRefHashSeen(bytes32 refHash);
+    error MinterRefHashSeen();
     error MinterInsufficientBankCash(uint256 amount, uint256 bankCash);
-    error MinterNonExistentWireIn(uint256 id);
-    error MinterNonExistentWireOut(uint256 id);
-    error MinterNonExistentRamp(uint256 id);
-    error MinterNonExistentCashEntry(uint256 id);
-    error MinterNonExistentRepayment(uint256 loanId, uint256 repaymentId);
-    error MinterWrongWireStatus(uint256 id);
+    error MinterNonExistentWireIn();
+    error MinterNonExistentWireOut();
+    error MinterNonExistentRamp();
+    error MinterNonExistentCashEntry();
+    error MinterWrongWireStatus();
     error MinterReceiverNotAllowed(address receiver);
-    error MinterAmountMismatch(uint256 amount, uint256 expected);
-    error MinterInsufficientCustody(uint256 amount, uint256 custody);
-    error MinterReceivedExceedsAmount(uint256 received, uint256 amount);
-    error MinterRampClosed(uint256 id);
+    error MinterAmountMismatch(uint256 expected);
+    error MinterInsufficientCustody(uint256 custody);
+    error MinterReceivedExceedsAmount(uint256 amount);
+    error MinterRampClosed();
     error MinterAlreadyReversed();
-    error MinterWrongEntry(uint256 entryId);
+    error MinterWrongEntry();
     error MinterPulledMoreThanRequested(uint256 requested, uint256 pulled);
 
     /// @custom:storage-location erc7201:pipeline.storage.Minter
@@ -184,8 +157,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         mapping(uint256 id => WireIn) wiresIn;
         mapping(uint256 id => WireOut) wiresOut;
         mapping(uint256 id => Ramp) ramps;
-        mapping(uint256 id => CashEntry) cashEntries;
-        mapping(uint256 entryId => uint256) disbursementIndices;
+        mapping(uint256 entryId => Disbursement) disbursements;
         mapping(uint256 loanId => mapping(uint256 repaymentId => Repayment)) repayments;
         mapping(bytes32 refHash => bool) refHashesSeen;
     }
@@ -207,20 +179,20 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         address _pocket,
         address _usdc
     ) internal onlyInitializing {
+        if (_pocket == address(0) || _factory == address(0)) revert MinterZeroAddress();
+
         MinterStorage storage $ = _getMinterStorage();
         $.stakedPlUsd = IStakedPipelineUSD(_stakedPlUsd);
         $.plUsd = IPipelineUSD(IERC4626(_stakedPlUsd).asset());
         $.loanRegistry = ILoanRegistry(_loanRegistry);
         $.usdc = IERC20(_usdc);
+        $.pocket = IPocket(_pocket);
         $.factory = _factory;
 
         _setTreasury($, _treasury);
-        _setPocket($, _pocket);
-
-        emit FactorySet(_factory);
     }
 
-    function recordWireIn(address receiver, uint256 amount, uint64 valueDate, bytes32 refHash, bytes32 lpRef)
+    function recordWireIn(address receiver, uint256 amount, uint64 valueDate, bytes32 refHash)
         external
         restricted
         whenNotPaused
@@ -232,7 +204,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         _consumeMintRef($, refHash);
         _applyRateLimits(amount);
         $.bankCash += amount;
-        $.plUsd.mint(address(this), amount);
+        _mintPlUsd($, address(this), amount);
 
         WireInStatus status = WireInStatus.Escrowed;
         if (receiver != address(this)) {
@@ -241,30 +213,20 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         }
 
         id = $.nextWireInId++;
-        $.wiresIn[id] = WireIn({
-            receiver: receiver,
-            status: status,
-            valueDate: valueDate,
-            amount: amount,
-            refHash: refHash,
-            lpRef: lpRef,
-            returnRef: bytes32(0)
-        });
+        $.wiresIn[id] = WireIn({status: status, amount: amount});
 
-        emit WireInRecorded(id, receiver, amount, valueDate, refHash, lpRef);
+        emit WireInRecorded(id, receiver, amount, valueDate, refHash);
     }
 
-    function assignWireIn(uint256 id, address receiver, bytes32 lpRef) external restricted whenNotPaused {
+    function assignWireIn(uint256 id, address receiver) external restricted whenNotPaused {
         MinterStorage storage $ = _getMinterStorage();
         WireIn storage wire = _escrowedWireIn($, id);
 
         _stakeFor($, receiver, wire.amount);
 
         wire.status = WireInStatus.Assigned;
-        wire.receiver = receiver;
-        wire.lpRef = lpRef;
 
-        emit WireInAssigned(id, receiver, lpRef);
+        emit WireInAssigned(id, receiver);
     }
 
     function returnWireIn(uint256 id, bytes32 refHash) external restricted {
@@ -273,11 +235,10 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
 
         _consumeRef($, refHash);
         uint256 amount = wire.amount;
-        $.plUsd.burn(amount);
+        _burnPlUsd($, amount);
         _subBankCash($, amount);
 
         wire.status = WireInStatus.Returned;
-        wire.returnRef = refHash;
 
         emit WireInReturned(id, amount, refHash);
     }
@@ -294,35 +255,29 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         _consumeRef($, refHash);
         _subBankCash($, amount);
 
-        uint256 index = $.loanRegistry.disburse(loanId, amount);
+        $.loanRegistry.disburse(loanId, amount);
         _syncDebt($, loanId);
 
-        entryId = _newCashEntry($, -amount.toInt256(), CashReason.Disbursed, valueDate, refHash, loanId, 0);
-        $.disbursementIndices[entryId] = index;
+        entryId = $.nextCashEntryId++;
+        $.disbursements[entryId] = Disbursement({loanId: loanId, amount: amount, reversed: false});
 
         emit CashDisbursed(loanId, entryId, amount, valueDate, refHash);
     }
 
     function reverseDisburse(uint256 loanId, uint256 amount, bytes32 refHash, uint256 originalId) external restricted {
         MinterStorage storage $ = _getMinterStorage();
-        CashEntry storage original = _existingCashEntry($, originalId);
-        if (
-            original.reason != CashReason.Disbursed || original.loanId != loanId || original.delta != -amount.toInt256()
-        ) {
-            revert MinterWrongEntry(originalId);
-        }
+        Disbursement storage original = _existingDisbursement($, originalId);
+        if (original.loanId != loanId || original.amount != amount) revert MinterWrongEntry();
         if (original.reversed) revert MinterAlreadyReversed();
 
         _consumeRef($, refHash);
         $.bankCash += amount;
 
-        $.loanRegistry.undisburse(loanId, $.disbursementIndices[originalId], amount);
+        $.loanRegistry.undisburse(loanId, amount);
         _syncDebt($, loanId);
 
         original.reversed = true;
-        uint256 entryId = _newCashEntry(
-            $, amount.toInt256(), CashReason.DisbursementReversed, uint64(block.timestamp), refHash, loanId, originalId
-        );
+        uint256 entryId = $.nextCashEntryId++;
 
         emit CashDisbursementReversed(loanId, entryId, originalId, amount, refHash);
     }
@@ -347,71 +302,58 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         if (interest + fees != 0) _applyRateLimits(interest + fees);
         $.bankCash += cash;
 
-        ILoanRegistry _loanRegistry = $.loanRegistry;
-        repaymentId = _loanRegistry.recordPayment(loanId, repaymentData);
+        bool carvedOut;
+        (repaymentId, carvedOut) = $.loanRegistry.recordPayment(loanId, repaymentData);
 
-        uint256 principal = repaymentData.seniorPrincipalRepaid;
-        bool carvedOut = _loanRegistry.loanMoney(loanId).carvedOut;
+        uint256 released;
         if (carvedOut) {
             IPocket _pocket = $.pocket;
-            if (interest != 0) $.plUsd.mint(address(_pocket), interest);
-            principal = _pocket.release(loanId, principal, interest);
+            if (interest != 0) _mintPlUsd($, address(_pocket), interest);
+            released = _pocket.release(loanId, repaymentData.seniorPrincipalRepaid, interest);
         } else if (interest != 0) {
-            $.plUsd.mint(address($.stakedPlUsd), interest);
+            _mintPlUsd($, address($.stakedPlUsd), interest);
         }
 
         uint256 feeShares;
         if (fees != 0) {
-            $.plUsd.mint(address(this), fees);
+            _mintPlUsd($, address(this), fees);
             feeShares = _stakeFor($, $.treasury, fees);
         }
 
         _syncDebt($, loanId);
 
-        $.repayments[loanId][repaymentId] = Repayment({
-            cash: cash,
-            principal: principal,
-            interestMinted: interest,
-            feeShares: feeShares,
-            saleId: saleId,
-            carvedOut: carvedOut,
-            reversed: false,
-            recorded: true
-        });
+        $.repayments[loanId][repaymentId] =
+            Repayment({feeShares: feeShares, fees: fees, released: released, carvedOut: carvedOut});
 
         emit CashRepaid(loanId, repaymentId, saleId, cash, interest, feeShares, valueDate, refHash);
     }
 
     function reverseRepay(uint256 loanId, uint256 repaymentId, bytes32 refHash) external restricted {
         MinterStorage storage $ = _getMinterStorage();
-        Repayment storage record = _existingRepayment($, loanId, repaymentId);
-        if (record.reversed) revert MinterAlreadyReversed();
+        (uint256 principal, uint256 interest) = $.loanRegistry.unrecordPayment(loanId, repaymentId);
 
+        Repayment storage record = $.repayments[loanId][repaymentId];
+        uint256 fees = record.fees;
+        uint256 cash = principal + interest + fees;
         _consumeRef($, refHash);
-        _subBankCash($, record.cash);
-
-        ILoanRegistry.RepaymentData memory repaymentData = $.loanRegistry.unrecordPayment(loanId, repaymentId);
+        _subBankCash($, cash);
 
         uint256 feeShares = record.feeShares;
         if (feeShares != 0) {
             uint256 assets = $.stakedPlUsd.burnShares($.treasury, feeShares);
-            if (assets != 0) $.plUsd.burn(assets);
-
-            uint256 fees = repaymentData.mgmtFee + repaymentData.perfFee + repaymentData.oetAlloc;
+            if (assets != 0) _burnPlUsd($, assets);
             if (assets < fees) _absorb($, fees - assets);
         }
 
         if (record.carvedOut) {
-            $.pocket.unrelease(loanId, record.principal, record.interestMinted);
+            $.pocket.unrelease(loanId, record.released, interest);
         } else {
-            _absorb($, record.interestMinted);
+            _absorb($, interest);
         }
 
         _syncDebt($, loanId);
 
-        record.reversed = true;
-
-        emit CashRepaymentReversed(loanId, repaymentId, record.cash, refHash);
+        emit CashRepaymentReversed(loanId, repaymentId, cash, refHash);
     }
 
     function requestWireOut(uint256 amount) external whenNotPaused returns (uint256 id) {
@@ -421,13 +363,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         $.plUsd.safeTransferFrom(msg.sender, address(this), amount);
 
         id = $.nextWireOutId++;
-        $.wiresOut[id] = WireOut({
-            lp: msg.sender,
-            status: WireOutStatus.Pending,
-            requestedAt: uint64(block.timestamp),
-            amount: amount,
-            refHash: bytes32(0)
-        });
+        $.wiresOut[id] = WireOut({lp: msg.sender, status: WireOutStatus.Pending, amount: amount});
 
         emit WireOutRequested(id, msg.sender, amount);
     }
@@ -435,14 +371,13 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     function settleWireOut(uint256 id, uint256 amount, uint64 valueDate, bytes32 refHash) external restricted {
         MinterStorage storage $ = _getMinterStorage();
         WireOut storage wire = _pendingWireOut($, id);
-        if (amount != wire.amount) revert MinterAmountMismatch(amount, wire.amount);
+        if (amount != wire.amount) revert MinterAmountMismatch(wire.amount);
 
         _consumeRef($, refHash);
-        $.plUsd.burn(amount);
+        _burnPlUsd($, amount);
         _subBankCash($, amount);
 
         wire.status = WireOutStatus.Settled;
-        wire.refHash = refHash;
 
         emit WireOutSettled(id, amount, valueDate, refHash);
     }
@@ -469,22 +404,15 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         _consumeRef($, refHash);
 
         if (direction == RampDirection.UsdcToBank) {
-            (,, uint256 custodyTotal) = _custody($);
-            if (custodyTotal < amount) revert MinterInsufficientCustody(amount, custodyTotal);
+            uint256 custodyTotal = _custodyTotal($);
+            if (custodyTotal < amount) revert MinterInsufficientCustody(custodyTotal);
         } else {
             _subBankCash($, amount);
         }
         $.inFlight += amount;
 
         id = $.nextRampId++;
-        $.ramps[id] = Ramp({
-            direction: direction,
-            closed: false,
-            openedAt: uint64(block.timestamp),
-            closedAt: 0,
-            amount: amount,
-            received: 0
-        });
+        $.ramps[id] = Ramp({direction: direction, closed: false, amount: amount});
 
         emit RampOpened(id, direction, amount, refHash);
     }
@@ -492,10 +420,10 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     function closeRamp(uint256 id, uint256 received, bytes32 refHash) external restricted {
         MinterStorage storage $ = _getMinterStorage();
         Ramp storage rampData = _existingRamp($, id);
-        if (rampData.closed) revert MinterRampClosed(id);
+        if (rampData.closed) revert MinterRampClosed();
 
         uint256 amount = rampData.amount;
-        if (received > amount) revert MinterReceivedExceedsAmount(received, amount);
+        if (received > amount) revert MinterReceivedExceedsAmount(amount);
 
         _consumeRef($, refHash);
         $.inFlight -= amount;
@@ -504,12 +432,10 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         uint256 loss = amount - received;
         if (loss != 0) {
             _absorb($, loss);
-            _newCashEntry($, -loss.toInt256(), CashReason.Expense, uint64(block.timestamp), refHash, 0, 0);
+            _recordCash($, CashReason.Expense, -loss.toInt256(), uint64(block.timestamp), refHash);
         }
 
         rampData.closed = true;
-        rampData.closedAt = uint64(block.timestamp);
-        rampData.received = received;
 
         emit RampClosed(id, received, loss, refHash);
     }
@@ -521,7 +447,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         _consumeMintRef($, refHash);
         _applyRateLimits(delta);
         $.bankCash += delta;
-        $.plUsd.mint(address($.stakedPlUsd), delta);
+        _mintPlUsd($, address($.stakedPlUsd), delta);
 
         _recordCash($, CashReason.Income, delta.toInt256(), valueDate, refHash);
     }
@@ -539,17 +465,14 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
 
     function recordCorrection(int256 delta, bytes32 reasonHash, uint256 originalId) external restricted {
         MinterStorage storage $ = _getMinterStorage();
-        _existingCashEntry($, originalId);
+        _requireCashEntry($, originalId);
 
         uint256 _bankCash = $.bankCash;
         int256 updated = _bankCash.toInt256() + delta;
         if (updated < 0) revert MinterInsufficientBankCash((-delta).toUint256(), _bankCash);
         $.bankCash = updated.toUint256();
 
-        uint256 entryId =
-            _newCashEntry($, delta, CashReason.Correction, uint64(block.timestamp), reasonHash, 0, originalId);
-
-        emit CashRecorded(CashReason.Correction, entryId, delta, uint64(block.timestamp), reasonHash);
+        emit CashCorrected(originalId, $.nextCashEntryId++, delta, reasonHash);
     }
 
     function correctVaultMint(uint256 amount, bytes32 refHash) external restricted {
@@ -564,18 +487,6 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
 
     function setTreasury(address newTreasury) external restricted {
         _setTreasury(_getMinterStorage(), newTreasury);
-    }
-
-    function setFactory(address newFactory) external restricted {
-        MinterStorage storage $ = _getMinterStorage();
-        if ($.factory == newFactory) revert MinterSameValue();
-        $.factory = newFactory;
-
-        emit FactorySet(newFactory);
-    }
-
-    function setPocket(address newPocket) external restricted {
-        _setPocket(_getMinterStorage(), newPocket);
     }
 
     function setCustodians(address[] calldata newCustodians) external restricted {
@@ -595,36 +506,17 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         _unpause();
     }
 
-    function snapshot() external {
-        emit Snapshot(block.number, poolState());
-    }
-
-    function plUsd() external view returns (address) {
-        return address(_getMinterStorage().plUsd);
-    }
-
-    function stakedPlUsd() external view returns (address) {
-        return address(_getMinterStorage().stakedPlUsd);
-    }
-
-    function loanRegistry() external view returns (address) {
-        return address(_getMinterStorage().loanRegistry);
-    }
-
-    function pocket() external view returns (address) {
-        return address(_getMinterStorage().pocket);
-    }
-
-    function usdc() external view returns (address) {
-        return address(_getMinterStorage().usdc);
-    }
-
-    function treasury() external view returns (address) {
-        return _getMinterStorage().treasury;
-    }
-
-    function factory() external view returns (address) {
-        return _getMinterStorage().factory;
+    function addressesConfig() external view returns (AddressesConfig memory) {
+        MinterStorage storage $ = _getMinterStorage();
+        return AddressesConfig({
+            plUsd: address($.plUsd),
+            stakedPlUsd: address($.stakedPlUsd),
+            loanRegistry: address($.loanRegistry),
+            pocket: address($.pocket),
+            usdc: address($.usdc),
+            treasury: $.treasury,
+            factory: $.factory
+        });
     }
 
     function custodians() external view returns (address[] memory) {
@@ -655,33 +547,16 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         return _existingRamp(_getMinterStorage(), id);
     }
 
-    function cashEntry(uint256 id) external view returns (CashEntry memory) {
-        return _existingCashEntry(_getMinterStorage(), id);
+    function disbursement(uint256 entryId) external view returns (Disbursement memory) {
+        return _existingDisbursement(_getMinterStorage(), entryId);
     }
 
     function repayment(uint256 loanId, uint256 repaymentId) external view returns (Repayment memory) {
-        return _existingRepayment(_getMinterStorage(), loanId, repaymentId);
+        return _getMinterStorage().repayments[loanId][repaymentId];
     }
 
     function refHashSeen(bytes32 refHash) external view returns (bool) {
         return _getMinterStorage().refHashesSeen[refHash];
-    }
-
-    function totalAssets() external view returns (uint256) {
-        return poolState().totalAssets;
-    }
-
-    function poolState() public view returns (PoolState memory pool) {
-        MinterStorage storage $ = _getMinterStorage();
-        ILoanRegistry _loanRegistry = $.loanRegistry;
-
-        uint256 custodyTotal;
-        (pool.custody, pool.readFailed, custodyTotal) = _custody($);
-        pool.bankCash = $.bankCash;
-        pool.inFlight = $.inFlight;
-        pool.outstandingTotal = _loanRegistry.outstandingTotal();
-        pool.unabsorbedTotal = $.unabsorbedTotal + _loanRegistry.unabsorbedTotal();
-        pool.totalAssets = custodyTotal + pool.bankCash + pool.inFlight + pool.outstandingTotal;
     }
 
     function _setTreasury(MinterStorage storage $, address newTreasury) private {
@@ -692,23 +567,23 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         emit TreasurySet(newTreasury);
     }
 
-    function _setPocket(MinterStorage storage $, address newPocket) private {
-        if (newPocket == address(0)) revert MinterZeroAddress();
-        if (address($.pocket) == newPocket) revert MinterSameValue();
-        $.pocket = IPocket(newPocket);
-
-        emit PocketSet(newPocket);
-    }
-
     function _consumeRef(MinterStorage storage $, bytes32 refHash) private {
         if (refHash == bytes32(0)) return;
-        if ($.refHashesSeen[refHash]) revert MinterRefHashSeen(refHash);
+        if ($.refHashesSeen[refHash]) revert MinterRefHashSeen();
         $.refHashesSeen[refHash] = true;
     }
 
     function _consumeMintRef(MinterStorage storage $, bytes32 refHash) private {
         if (refHash == bytes32(0)) revert MinterMissingRef();
         _consumeRef($, refHash);
+    }
+
+    function _mintPlUsd(MinterStorage storage $, address to, uint256 amount) private {
+        $.plUsd.mint(to, amount);
+    }
+
+    function _burnPlUsd(MinterStorage storage $, uint256 amount) private {
+        $.plUsd.burn(amount);
     }
 
     function _subBankCash(MinterStorage storage $, uint256 amount) private {
@@ -731,109 +606,69 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
 
         uint256 pulled = $.stakedPlUsd.pull(amount);
         if (pulled > amount) revert MinterPulledMoreThanRequested(amount, pulled);
-        if (pulled != 0) $.plUsd.burn(pulled);
+        if (pulled != 0) _burnPlUsd($, pulled);
         $.unabsorbedTotal += amount - pulled;
 
         emit LossAbsorbed(amount, pulled);
     }
 
     function _syncDebt(MinterStorage storage $, uint256 loanId) private {
-        address _factory = $.factory;
-        if (_factory == address(0)) return;
-
-        try IDealTokenFactory(_factory).syncDebt(loanId) {}
-        catch {
-            emit SyncLagging(loanId);
-        }
-    }
-
-    function _newCashEntry(
-        MinterStorage storage $,
-        int256 delta,
-        CashReason reason,
-        uint64 valueDate,
-        bytes32 refHash,
-        uint256 loanId,
-        uint256 original
-    ) private returns (uint256 entryId) {
-        entryId = $.nextCashEntryId++;
-        $.cashEntries[entryId] = CashEntry({
-            delta: delta,
-            reason: reason,
-            reversed: false,
-            valueDate: valueDate,
-            loanId: loanId,
-            original: original,
-            refHash: refHash
-        });
+        IDealTokenFactory($.factory).syncDebt(loanId);
     }
 
     function _recordCash(MinterStorage storage $, CashReason reason, int256 delta, uint64 valueDate, bytes32 refHash)
         private
     {
-        uint256 entryId = _newCashEntry($, delta, reason, valueDate, refHash, 0, 0);
-
-        emit CashRecorded(reason, entryId, delta, valueDate, refHash);
+        emit CashRecorded(reason, $.nextCashEntryId++, delta, valueDate, refHash);
     }
 
-    function _custody(MinterStorage storage $)
-        private
-        view
-        returns (Custody[] memory custody, bool readFailed, uint256 total)
-    {
+    function _custodyTotal(MinterStorage storage $) private view returns (uint256 total) {
         address[] storage _custodians = $.custodians;
         IERC20 _usdc = $.usdc;
 
-        custody = new Custody[](_custodians.length);
         for (uint256 i; i < _custodians.length; ++i) {
-            address custodian = _custodians[i];
-            uint256 balance;
-            try _usdc.balanceOf(custodian) returns (uint256 value) {
-                balance = value;
-            } catch {
-                readFailed = true;
-            }
-            custody[i] = Custody({custodian: custodian, balance: balance});
-            total += balance;
+            try _usdc.balanceOf(_custodians[i]) returns (uint256 balance) {
+                total += balance;
+            } catch {}
         }
     }
 
     function _existingWireIn(MinterStorage storage $, uint256 id) private view returns (WireIn storage) {
-        if (id >= $.nextWireInId) revert MinterNonExistentWireIn(id);
+        if (id >= $.nextWireInId) revert MinterNonExistentWireIn();
         return $.wiresIn[id];
     }
 
     function _escrowedWireIn(MinterStorage storage $, uint256 id) private view returns (WireIn storage wire) {
         wire = _existingWireIn($, id);
-        if (wire.status != WireInStatus.Escrowed) revert MinterWrongWireStatus(id);
+        if (wire.status != WireInStatus.Escrowed) revert MinterWrongWireStatus();
     }
 
     function _existingWireOut(MinterStorage storage $, uint256 id) private view returns (WireOut storage) {
-        if (id >= $.nextWireOutId) revert MinterNonExistentWireOut(id);
+        if (id >= $.nextWireOutId) revert MinterNonExistentWireOut();
         return $.wiresOut[id];
     }
 
     function _pendingWireOut(MinterStorage storage $, uint256 id) private view returns (WireOut storage wire) {
         wire = _existingWireOut($, id);
-        if (wire.status != WireOutStatus.Pending) revert MinterWrongWireStatus(id);
+        if (wire.status != WireOutStatus.Pending) revert MinterWrongWireStatus();
     }
 
     function _existingRamp(MinterStorage storage $, uint256 id) private view returns (Ramp storage) {
-        if (id >= $.nextRampId) revert MinterNonExistentRamp(id);
+        if (id >= $.nextRampId) revert MinterNonExistentRamp();
         return $.ramps[id];
     }
 
-    function _existingCashEntry(MinterStorage storage $, uint256 id) private view returns (CashEntry storage) {
-        if (id >= $.nextCashEntryId) revert MinterNonExistentCashEntry(id);
-        return $.cashEntries[id];
+    function _requireCashEntry(MinterStorage storage $, uint256 id) private view {
+        if (id >= $.nextCashEntryId) revert MinterNonExistentCashEntry();
     }
 
-    function _existingRepayment(MinterStorage storage $, uint256 loanId, uint256 repaymentId)
+    function _existingDisbursement(MinterStorage storage $, uint256 entryId)
         private
         view
-        returns (Repayment storage record)
+        returns (Disbursement storage entry)
     {
-        record = $.repayments[loanId][repaymentId];
-        if (!record.recorded) revert MinterNonExistentRepayment(loanId, repaymentId);
+        _requireCashEntry($, entryId);
+        entry = $.disbursements[entryId];
+        if (entry.amount == 0) revert MinterWrongEntry();
     }
 }

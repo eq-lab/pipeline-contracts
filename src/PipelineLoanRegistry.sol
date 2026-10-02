@@ -14,12 +14,15 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
         _disableInitializers();
     }
 
-    function initialize(address authority, string calldata erc721Name, string calldata erc721Symbol)
-        external
-        initializer
-    {
+    function initialize(
+        address authority,
+        string calldata erc721Name,
+        string calldata erc721Symbol,
+        address stakedPlUsd,
+        address pocket
+    ) external initializer {
         __AccessManaged_init(authority);
-        __LoanRegistry_init(erc721Name, erc721Symbol);
+        __LoanRegistry_init(erc721Name, erc721Symbol, stakedPlUsd, pocket);
     }
 
     function drawLoan(string calldata metadataURI, ImmutableLoanData calldata economics)
@@ -34,23 +37,27 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
         _updateMutable(loanId, newStatus, metadataURI);
     }
 
-    function disburse(uint256 loanId, uint256 amount) external restricted returns (uint256 index) {
-        return _disburse(loanId, amount);
+    function disburse(uint256 loanId, uint256 amount) external restricted {
+        _disburse(loanId, amount);
     }
 
-    function undisburse(uint256 loanId, uint256 index, uint256 amount) external restricted {
-        _undisburse(loanId, index, amount);
+    function undisburse(uint256 loanId, uint256 amount) external restricted {
+        _undisburse(loanId, amount);
     }
 
     function recordPayment(uint256 loanId, RepaymentData calldata repayment)
         external
         restricted
-        returns (uint256 repaymentId)
+        returns (uint256 repaymentId, bool carvedOut)
     {
         return _recordPayment(loanId, repayment);
     }
 
-    function unrecordPayment(uint256 loanId, uint256 repaymentId) external restricted returns (RepaymentData memory) {
+    function unrecordPayment(uint256 loanId, uint256 repaymentId)
+        external
+        restricted
+        returns (uint256 principal, uint256 interest)
+    {
         return _unrecordPayment(loanId, repaymentId);
     }
 
@@ -88,14 +95,6 @@ contract PipelineLoanRegistry is UUPSUpgradeable, AccessManagedUpgradeable, Loan
 
     function setCapitalWallet(address newCapitalWallet) external restricted {
         _setCapitalWallet(newCapitalWallet);
-    }
-
-    function setStakedPlUsd(address newStakedPlUsd) external restricted {
-        _setStakedPlUsd(newStakedPlUsd);
-    }
-
-    function setPocket(address newPocket) external restricted {
-        _setPocket(newPocket);
     }
 
     function setMaxFeeBps(uint32 newMaxFeeBps) external restricted {

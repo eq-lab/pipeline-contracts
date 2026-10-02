@@ -87,7 +87,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
         assertEq(uint8(loanRegistry.status(loanId)), uint8(ILoanRegistry.LoanStatus.Approved));
         assertEq(loanRegistry.outstanding(loanId), 0);
-        assertEq(loanRegistry.accruedInterest(loanId), 0);
+        assertEq(_accruedInterest(loanId), 0);
     }
 
     function test_drawLoanReverts() public {
@@ -158,7 +158,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
     function test_updateMutableReverts() public {
         vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, 0));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
         loanRegistry.updateMutable(0, ILoanRegistry.LoanStatus.Approved, "");
 
         uint256 loanId = _drawLoan();
@@ -166,9 +166,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Approved
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Approved
             )
         );
         loanRegistry.updateMutable(loanId, ILoanRegistry.LoanStatus.Performing, "");
@@ -182,9 +180,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Performing
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Performing
             )
         );
         loanRegistry.updateMutable(loanId, ILoanRegistry.LoanStatus.Default, "");
@@ -194,9 +190,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Default
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Default
             )
         );
         loanRegistry.updateMutable(loanId, ILoanRegistry.LoanStatus.WatchList, "");
@@ -206,9 +200,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         loanRegistry.closeLoan(closedLoanId, ILoanRegistry.ClosureReason.Cancelled);
 
         vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryAlreadyClosed.selector, closedLoanId)
-        );
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryAlreadyClosed.selector);
         loanRegistry.updateMutable(closedLoanId, ILoanRegistry.LoanStatus.Closed, "");
     }
 
@@ -221,8 +213,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.expectEmit(address(loanRegistry));
         emit LoanRegistryUpgradeable.StatusUpdated(loanId, ILoanRegistry.LoanStatus.Performing);
 
-        uint256 index = _disburse(loanId, half);
-        assertEq(index, 0);
+        _disburse(loanId, half);
 
         ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
         assertEq(uint8(loan.status), uint8(ILoanRegistry.LoanStatus.Performing));
@@ -237,13 +228,8 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(epoch.maturityDate, loan.currentMaturityTimestamp);
         assertEq(epoch.seniorInterestRate, RATE);
 
-        ILoanRegistry.Disbursement[] memory list = loanRegistry.disbursements(loanId);
-        assertEq(list.length, 1);
-        assertEq(list[0].amount, half);
-        assertEq(list[0].remaining, half);
-
         vm.recordLogs();
-        assertEq(_disburse(loanId, half), 1);
+        _disburse(loanId, half);
         assertEq(vm.getRecordedLogs().length, 1);
         assertEq(loanRegistry.outstandingTotal(), SENIOR_TRANCHE);
     }
@@ -254,7 +240,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         _disburse(loanId, half);
 
         skip(YEAR);
-        assertEq(loanRegistry.accruedInterest(loanId), 50_000_000);
+        assertEq(_accruedInterest(loanId), 50_000_000);
 
         _disburse(loanId, half);
 
@@ -262,15 +248,15 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(loan.nextEconomicsEpochsId, 2);
         assertEq(loan.disbursed, SENIOR_TRANCHE);
         assertEq(loanRegistry.economicsEpoch(loanId, 1).accruedInterest, 50_000_000);
-        assertEq(loanRegistry.accruedInterest(loanId), 50_000_000);
+        assertEq(_accruedInterest(loanId), 50_000_000);
 
         skip(YEAR);
-        assertEq(loanRegistry.accruedInterest(loanId), 150_000_000);
+        assertEq(_accruedInterest(loanId), 150_000_000);
     }
 
     function test_disburseReverts() public {
         vm.prank(address(minter));
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, 0));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
         loanRegistry.disburse(0, 1);
 
         uint256 loanId = _drawLoan();
@@ -283,7 +269,6 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.expectRevert(
             abi.encodeWithSelector(
                 LoanRegistryUpgradeable.LoanRegistryDisbursementExceedsTranche.selector,
-                loanId,
                 SENIOR_TRANCHE + 1,
                 SENIOR_TRANCHE
             )
@@ -296,9 +281,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Default
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Default
             )
         );
         loanRegistry.disburse(loanId, 1);
@@ -307,7 +290,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         loanRegistry.cure(loanId);
 
         vm.prank(address(minter));
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryCarvedOut.selector, loanId));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryCarvedOut.selector);
         loanRegistry.disburse(loanId, 1);
 
         uint256 closedLoanId = _drawLoan();
@@ -317,9 +300,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                closedLoanId,
-                ILoanRegistry.LoanStatus.Closed
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Closed
             )
         );
         loanRegistry.disburse(closedLoanId, 1);
@@ -328,13 +309,13 @@ contract LoanRegistryTest is PipelineTestSetUp {
     function test_undisburse() public {
         uint256 loanId = _drawLoan();
         uint256 half = SENIOR_TRANCHE / 2;
-        uint256 index = _disburse(loanId, half);
+        _disburse(loanId, half);
 
         vm.expectEmit(address(loanRegistry));
         emit LoanRegistryUpgradeable.Undisbursed(loanId, half, 0);
 
         vm.prank(address(minter));
-        loanRegistry.undisburse(loanId, index, half);
+        loanRegistry.undisburse(loanId, half);
 
         ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
         assertEq(loan.disbursed, 0);
@@ -344,95 +325,46 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(uint8(loan.status), uint8(ILoanRegistry.LoanStatus.Performing));
     }
 
-    function test_undisburseNamedDisbursement() public {
-        uint256 loanId = _drawLoan();
-        uint256 first = _disburse(loanId, 50);
-        uint256 second = _disburse(loanId, 100);
-        assertEq(first, 0);
-        assertEq(second, 1);
-
-        vm.prank(address(minter));
-        loanRegistry.undisburse(loanId, first, 50);
-
-        ILoanRegistry.Disbursement[] memory list = loanRegistry.disbursements(loanId);
-        assertEq(list.length, 2);
-        assertEq(list[0].amount, 50);
-        assertEq(list[0].remaining, 0);
-        assertEq(list[1].amount, 100);
-        assertEq(list[1].remaining, 100);
-        assertEq(loanRegistry.mutableLoanData(loanId).disbursed, 100);
-
-        vm.prank(address(minter));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryAmountExceedsRemaining.selector, loanId, first, 1, 0
-            )
-        );
-        loanRegistry.undisburse(loanId, first, 1);
-    }
-
     function test_undisburseReverts() public {
         uint256 loanId = _drawLoan();
 
         vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Approved
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Approved
             )
         );
-        loanRegistry.undisburse(loanId, 0, 1);
+        loanRegistry.undisburse(loanId, 1);
 
         _disburse(loanId, 300_000_000);
-        uint256 second = _disburse(loanId, 200_000_000);
+        _disburse(loanId, 200_000_000);
 
         vm.prank(address(minter));
         vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryInvalidAmount.selector);
-        loanRegistry.undisburse(loanId, second, 0);
-
-        vm.prank(address(minter));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryAmountExceedsRemaining.selector,
-                loanId,
-                second,
-                250_000_000,
-                200_000_000
-            )
-        );
-        loanRegistry.undisburse(loanId, second, 250_000_000);
-
-        vm.prank(address(minter));
-        vm.expectRevert(
-            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentDisbursement.selector, loanId, 2)
-        );
-        loanRegistry.undisburse(loanId, 2, 1);
+        loanRegistry.undisburse(loanId, 0);
 
         _recordPayment(loanId, _principal(400_000_000));
 
         vm.prank(address(minter));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryAmountExceedsOutstanding.selector, loanId, 200_000_000, 100_000_000
-            )
+            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryAmountExceedsOutstanding.selector, 100_000_000)
         );
-        loanRegistry.undisburse(loanId, second, 200_000_000);
+        loanRegistry.undisburse(loanId, 200_000_000);
 
         _setDefault(loanId);
         vm.prank(loanRegistryManager);
         loanRegistry.cure(loanId);
 
         vm.prank(address(minter));
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryCarvedOut.selector, loanId));
-        loanRegistry.undisburse(loanId, second, 1);
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryCarvedOut.selector);
+        loanRegistry.undisburse(loanId, 1);
     }
 
     function test_recordPayment() public {
         uint256 loanId = _drawAndDisburse();
 
         skip(YEAR);
-        assertEq(loanRegistry.accruedInterest(loanId), 100_000_000);
+        assertEq(_accruedInterest(loanId), 100_000_000);
 
         ILoanRegistry.RepaymentData memory repayment = ILoanRegistry.RepaymentData({
             offtakerReceived: 72_500_000,
@@ -447,8 +379,10 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.expectEmit(address(loanRegistry));
         emit LoanRegistryUpgradeable.PaymentRecorded(loanId, 0, repayment, SENIOR_TRANCHE - 10_000_000);
 
-        uint256 repaymentId = _recordPayment(loanId, repayment);
+        vm.prank(address(minter));
+        (uint256 repaymentId, bool carvedOut) = loanRegistry.recordPayment(loanId, repayment);
         assertEq(repaymentId, 0);
+        assertFalse(carvedOut);
 
         ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
         assertEq(loan.nextRepaymentId, 1);
@@ -456,24 +390,16 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(loan.repaid, 10_000_000);
         assertEq(loanRegistry.economicsEpoch(loanId, 1).accruedInterest, 100_000_000);
 
-        ILoanRegistry.RepaymentData memory cumulative = loanRegistry.cumulativeRepaymentData(loanId);
-        assertEq(cumulative.offtakerReceived, 72_500_000);
-        assertEq(cumulative.seniorPrincipalRepaid, 10_000_000);
-        assertEq(cumulative.seniorInterest, 50_000_000);
-        assertEq(cumulative.mgmtFee, 10_000_000);
-        assertEq(cumulative.perfFee, 2_500_000);
-        assertEq(keccak256(abi.encode(loanRegistry.repaymentData(loanId, 0))), keccak256(abi.encode(repayment)));
-
         assertEq(loanRegistry.outstanding(loanId), SENIOR_TRANCHE - 10_000_000);
         assertEq(loanRegistry.outstandingTotal(), SENIOR_TRANCHE - 10_000_000);
-        assertEq(loanRegistry.accruedInterest(loanId), 37_500_000);
+        assertEq(_accruedInterest(loanId), 37_500_000);
     }
 
     function test_recordPaymentReverts() public {
         ILoanRegistry.RepaymentData memory repayment;
 
         vm.prank(address(minter));
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, 0));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
         loanRegistry.recordPayment(0, repayment);
 
         uint256 loanId = _drawLoan();
@@ -481,9 +407,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Approved
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Approved
             )
         );
         loanRegistry.recordPayment(loanId, repayment);
@@ -504,9 +428,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
         vm.prank(address(minter));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryInterestExceedsMax.selector, loanId, 50_000_001, 50_000_000
-            )
+            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryInterestExceedsMax.selector, 50_000_000)
         );
         loanRegistry.recordPayment(loanId, repayment);
 
@@ -521,18 +443,13 @@ contract LoanRegistryTest is PipelineTestSetUp {
         });
 
         vm.prank(address(minter));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryFeesExceedCap.selector, loanId, 6_250_001, 6_250_000
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryFeesExceedCap.selector, 6_250_000));
         loanRegistry.recordPayment(loanId, repayment);
 
         vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(
                 LoanRegistryUpgradeable.LoanRegistryRepaidExceedsDisbursed.selector,
-                loanId,
                 SENIOR_TRANCHE / 2 + 1,
                 SENIOR_TRANCHE / 2
             )
@@ -561,7 +478,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryOfftakerExceedsPrice.selector, loanId, 1_300_000_000, FACILITY
+                LoanRegistryUpgradeable.LoanRegistryOfftakerExceedsPrice.selector, 1_300_000_000, FACILITY
             )
         );
         loanRegistry.recordPayment(loanId, repayment);
@@ -573,7 +490,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryOfftakerExceedsPrice.selector, loanId, FACILITY + 1, FACILITY
+                LoanRegistryUpgradeable.LoanRegistryOfftakerExceedsPrice.selector, FACILITY + 1, FACILITY
             )
         );
         loanRegistry.recordPayment(loanId, _equity(1));
@@ -589,17 +506,19 @@ contract LoanRegistryTest is PipelineTestSetUp {
         repayment.offtakerReceived = 1;
 
         vm.prank(address(minter));
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonZeroOnDefault.selector, loanId));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonZeroOnDefault.selector);
         loanRegistry.recordPayment(loanId, repayment);
 
         vm.prank(address(minter));
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonZeroOnDefault.selector, loanId));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonZeroOnDefault.selector);
         loanRegistry.recordPayment(loanId, _equity(1));
 
         repayment = _principal(1_000_000);
         repayment.seniorInterest = 1_000_000;
         repayment.offtakerReceived = 2_000_000;
-        _recordPayment(loanId, repayment);
+        vm.prank(address(minter));
+        (, bool carvedOut) = loanRegistry.recordPayment(loanId, repayment);
+        assertTrue(carvedOut);
 
         assertEq(loanRegistry.outstanding(loanId), SENIOR_TRANCHE - 1_000_000);
         assertEq(uint8(loanRegistry.status(loanId)), uint8(ILoanRegistry.LoanStatus.Default));
@@ -614,39 +533,34 @@ contract LoanRegistryTest is PipelineTestSetUp {
         repayment.offtakerReceived = 50_000_000;
         uint256 repaymentId = _recordPayment(loanId, repayment);
 
-        assertEq(loanRegistry.accruedInterest(loanId), 60_000_000);
+        assertEq(_accruedInterest(loanId), 60_000_000);
         uint256 outstandingBefore = loanRegistry.outstanding(loanId);
 
         vm.expectEmit(address(loanRegistry));
-        emit LoanRegistryUpgradeable.PaymentUnrecorded(loanId, repaymentId, repayment, SENIOR_TRANCHE);
+        emit LoanRegistryUpgradeable.PaymentUnrecorded(loanId, repaymentId, SENIOR_TRANCHE);
 
         vm.prank(address(minter));
-        ILoanRegistry.RepaymentData memory reversed = loanRegistry.unrecordPayment(loanId, repaymentId);
+        (uint256 principal, uint256 interest) = loanRegistry.unrecordPayment(loanId, repaymentId);
+        assertEq(principal, 10_000_000);
+        assertEq(interest, 40_000_000);
 
-        assertEq(keccak256(abi.encode(reversed)), keccak256(abi.encode(repayment)));
-        assertTrue(loanRegistry.isRepaymentReversed(loanId, repaymentId));
         assertEq(loanRegistry.outstanding(loanId), outstandingBefore + 10_000_000);
         assertEq(loanRegistry.outstandingTotal(), SENIOR_TRANCHE);
         assertEq(loanRegistry.mutableLoanData(loanId).repaid, 0);
+        assertEq(_accruedInterest(loanId), 100_000_000);
 
-        ILoanRegistry.RepaymentData memory cumulative = loanRegistry.cumulativeRepaymentData(loanId);
-        assertEq(cumulative.offtakerReceived, 0);
-        assertEq(cumulative.seniorPrincipalRepaid, 0);
-        assertEq(cumulative.seniorInterest, 0);
-        assertEq(loanRegistry.accruedInterest(loanId), 100_000_000);
+        _recordPayment(loanId, _equity(FACILITY));
     }
 
     function test_unrecordPaymentReverts() public {
         vm.prank(address(minter));
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, 0));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
         loanRegistry.unrecordPayment(0, 0);
 
         uint256 loanId = _drawAndDisburse();
 
         vm.prank(address(minter));
-        vm.expectRevert(
-            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentRepayment.selector, loanId, 0)
-        );
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentRepayment.selector);
         loanRegistry.unrecordPayment(loanId, 0);
 
         uint256 repaymentId = _recordPayment(loanId, _principal(1));
@@ -655,11 +569,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         loanRegistry.unrecordPayment(loanId, repaymentId);
 
         vm.prank(address(minter));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryRepaymentAlreadyReversed.selector, loanId, repaymentId
-            )
-        );
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryRepaymentAlreadyReversed.selector);
         loanRegistry.unrecordPayment(loanId, repaymentId);
     }
 
@@ -730,7 +640,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
     function test_setDefaultReverts() public {
         vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, 0));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
         loanRegistry.setDefault(0);
 
         uint256 loanId = _drawLoan();
@@ -738,9 +648,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Approved
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Approved
             )
         );
         loanRegistry.setDefault(loanId);
@@ -766,9 +674,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Default
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Default
             )
         );
         loanRegistry.setDefault(loanId);
@@ -780,9 +686,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Performing
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Performing
             )
         );
         loanRegistry.cure(loanId);
@@ -835,9 +739,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Performing
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Performing
             )
         );
         loanRegistry.writeDown(loanId, 1);
@@ -851,10 +753,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryAmountExceedsOutstanding.selector,
-                loanId,
-                SENIOR_TRANCHE + 1,
-                SENIOR_TRANCHE
+                LoanRegistryUpgradeable.LoanRegistryAmountExceedsOutstanding.selector, SENIOR_TRANCHE
             )
         );
         loanRegistry.writeDown(loanId, SENIOR_TRANCHE + 1);
@@ -871,7 +770,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
     function test_adjustInterest() public {
         uint256 loanId = _drawAndDisburse();
         skip(YEAR);
-        uint256 base = loanRegistry.accruedInterest(loanId);
+        uint256 base = _accruedInterest(loanId);
         bytes32 reasonHash = bytes32(uint256(1));
 
         vm.expectEmit(address(loanRegistry));
@@ -879,16 +778,16 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
         vm.prank(loanRegistryManager);
         loanRegistry.adjustInterest(loanId, -1_000_000, reasonHash);
-        assertEq(loanRegistry.accruedInterest(loanId), base - 1_000_000);
+        assertEq(_accruedInterest(loanId), base - 1_000_000);
 
         vm.prank(loanRegistryManager);
         loanRegistry.adjustInterest(loanId, 3_000_000, reasonHash);
-        assertEq(loanRegistry.accruedInterest(loanId), base + 2_000_000);
+        assertEq(_accruedInterest(loanId), base + 2_000_000);
         assertEq(loanRegistry.mutableLoanData(loanId).interestAdjustment, 2_000_000);
 
         vm.prank(loanRegistryManager);
         loanRegistry.adjustInterest(loanId, -int256(base) * 2, reasonHash);
-        assertEq(loanRegistry.accruedInterest(loanId), 0);
+        assertEq(_accruedInterest(loanId), 0);
     }
 
     function test_adjustInterestReverts() public {
@@ -897,9 +796,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Approved
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Approved
             )
         );
         loanRegistry.adjustInterest(loanId, 1, bytes32(0));
@@ -926,13 +823,11 @@ contract LoanRegistryTest is PipelineTestSetUp {
         _disburse(otherLoanId, 1_000);
 
         vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryOutstandingNotZero.selector, otherLoanId)
-        );
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryOutstandingNotZero.selector);
         loanRegistry.closeLoan(otherLoanId, ILoanRegistry.ClosureReason.Cancelled);
 
         vm.prank(address(minter));
-        loanRegistry.undisburse(otherLoanId, 0, 1_000);
+        loanRegistry.undisburse(otherLoanId, 1_000);
 
         vm.prank(loanRegistryManager);
         loanRegistry.closeLoan(otherLoanId, ILoanRegistry.ClosureReason.Cancelled);
@@ -945,7 +840,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         skip(1);
         _recordPayment(loanId, _principal(SENIOR_TRANCHE));
         assertEq(loanRegistry.outstanding(loanId), 0);
-        assertEq(loanRegistry.accruedInterest(loanId), 3);
+        assertEq(_accruedInterest(loanId), 3);
 
         vm.expectEmit(address(loanRegistry));
         emit LoanRegistryUpgradeable.InterestSettled(loanId, 3, 0, 3);
@@ -956,12 +851,12 @@ contract LoanRegistryTest is PipelineTestSetUp {
         loanRegistry.closeLoan(loanId, ILoanRegistry.ClosureReason.EarlyRepayment);
 
         assertEq(uint8(loanRegistry.status(loanId)), uint8(ILoanRegistry.LoanStatus.Closed));
-        assertEq(loanRegistry.accruedInterest(loanId), 0);
+        assertEq(_accruedInterest(loanId), 0);
     }
 
     function test_closeLoanReverts() public {
         vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, 0));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
         loanRegistry.closeLoan(0, ILoanRegistry.ClosureReason.Cancelled);
 
         uint256 loanId = _drawAndDisburse();
@@ -973,16 +868,12 @@ contract LoanRegistryTest is PipelineTestSetUp {
         ];
         for (uint256 i = 0; i < invalidReasons.length; ++i) {
             vm.prank(loanRegistryManager);
-            vm.expectRevert(
-                abi.encodeWithSelector(
-                    LoanRegistryUpgradeable.LoanRegistryInvalidClosureReason.selector, invalidReasons[i]
-                )
-            );
+            vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryInvalidClosureReason.selector);
             loanRegistry.closeLoan(loanId, invalidReasons[i]);
         }
 
         vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryOutstandingNotZero.selector, loanId));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryOutstandingNotZero.selector);
         loanRegistry.closeLoan(loanId, ILoanRegistry.ClosureReason.ScheduledMaturity);
 
         skip(YEAR);
@@ -991,7 +882,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryResidualExceedsMax.selector, loanId, 100_000_000, maxResidual
+                LoanRegistryUpgradeable.LoanRegistryResidualExceedsMax.selector, 100_000_000, maxResidual
             )
         );
         loanRegistry.closeLoan(loanId, ILoanRegistry.ClosureReason.ScheduledMaturity);
@@ -1002,9 +893,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                defaultedLoanId,
-                ILoanRegistry.LoanStatus.Default
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Default
             )
         );
         loanRegistry.closeLoan(defaultedLoanId, ILoanRegistry.ClosureReason.EarlyRepayment);
@@ -1015,7 +904,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         _setDefault(loanId);
 
         vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryOutstandingNotZero.selector, loanId));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryOutstandingNotZero.selector);
         loanRegistry.closeDefaulted(loanId, ILoanRegistry.ClosureReason.Default);
 
         skip(YEAR);
@@ -1043,9 +932,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Performing
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Performing
             )
         );
         loanRegistry.closeDefaulted(loanId, ILoanRegistry.ClosureReason.Default);
@@ -1053,12 +940,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         _setDefault(loanId);
 
         vm.prank(loanRegistryManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryInvalidClosureReason.selector,
-                ILoanRegistry.ClosureReason.EarlyRepayment
-            )
-        );
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryInvalidClosureReason.selector);
         loanRegistry.closeDefaulted(loanId, ILoanRegistry.ClosureReason.EarlyRepayment);
     }
 
@@ -1094,12 +976,12 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(epoch.seniorInterestRate, newRate);
 
         skip(YEAR / 2);
-        assertEq(loanRegistry.accruedInterest(loanId), firstEpochInterest + 60_000_000);
+        assertEq(_accruedInterest(loanId), firstEpochInterest + 60_000_000);
     }
 
     function test_rolloverReverts() public {
         vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, 0));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
         loanRegistry.rollover(0, RATE, 0);
 
         uint256 loanId = _drawLoan();
@@ -1108,9 +990,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Approved
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Approved
             )
         );
         loanRegistry.rollover(loanId, RATE, newMaturity);
@@ -1118,7 +998,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         _disburse(loanId, SENIOR_TRANCHE);
 
         vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNotMatured.selector, loanId));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNotMatured.selector);
         loanRegistry.rollover(loanId, RATE, newMaturity);
 
         skip(YEAR);
@@ -1127,9 +1007,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector,
-                loanId,
-                ILoanRegistry.LoanStatus.Default
+                LoanRegistryUpgradeable.LoanRegistryWrongCurrentStatus.selector, ILoanRegistry.LoanStatus.Default
             )
         );
         loanRegistry.rollover(loanId, RATE, newMaturity);
@@ -1158,7 +1036,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(epoch.maturityDate, newMaturity);
 
         skip(YEAR);
-        assertEq(loanRegistry.accruedInterest(loanId), 200_000_000);
+        assertEq(_accruedInterest(loanId), 200_000_000);
     }
 
     function test_amendEconomics() public {
@@ -1182,12 +1060,12 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(epoch.maturityDate, newMaturity);
 
         skip(YEAR / 2);
-        assertEq(loanRegistry.accruedInterest(loanId), 200_000_000);
+        assertEq(_accruedInterest(loanId), 200_000_000);
     }
 
     function test_amendEconomicsReverts() public {
         vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, 0));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
         loanRegistry.amendEconomics(0, RATE, 0);
 
         uint256 loanId = _drawLoan();
@@ -1195,7 +1073,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         loanRegistry.closeLoan(loanId, ILoanRegistry.ClosureReason.Cancelled);
 
         vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryAlreadyClosed.selector, loanId));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryAlreadyClosed.selector);
         loanRegistry.amendEconomics(loanId, RATE, 0);
     }
 
@@ -1208,16 +1086,6 @@ contract LoanRegistryTest is PipelineTestSetUp {
         emit LoanRegistryUpgradeable.CapitalWalletSet(newAddress);
         loanRegistry.setCapitalWallet(newAddress);
         assertEq(loanRegistry.capitalWallet(), newAddress);
-
-        vm.expectEmit(address(loanRegistry));
-        emit LoanRegistryUpgradeable.StakedPlUsdSet(newAddress);
-        loanRegistry.setStakedPlUsd(newAddress);
-        assertEq(loanRegistry.stakedPlUsd(), newAddress);
-
-        vm.expectEmit(address(loanRegistry));
-        emit LoanRegistryUpgradeable.PocketSet(newAddress);
-        loanRegistry.setPocket(newAddress);
-        assertEq(loanRegistry.pocket(), newAddress);
 
         vm.expectEmit(address(loanRegistry));
         emit LoanRegistryUpgradeable.MaxFeeBpsSet(10_000);
@@ -1242,16 +1110,6 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.expectRevert(LoanRegistryUpgradeable.LoanRegistrySameValue.selector);
         loanRegistry.setCapitalWallet(capitalWallet);
 
-        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryZeroAddress.selector);
-        loanRegistry.setStakedPlUsd(address(0));
-        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistrySameValue.selector);
-        loanRegistry.setStakedPlUsd(address(sPlUsd));
-
-        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryZeroAddress.selector);
-        loanRegistry.setPocket(address(0));
-        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistrySameValue.selector);
-        loanRegistry.setPocket(address(pocket));
-
         vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryInvalidMaxFeeBps.selector);
         loanRegistry.setMaxFeeBps(10_001);
         vm.expectRevert(LoanRegistryUpgradeable.LoanRegistrySameValue.selector);
@@ -1263,9 +1121,31 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.stopPrank();
     }
 
+    function test_initializeRejectsZeroAddresses() public {
+        PipelineLoanRegistry implementation = new PipelineLoanRegistry();
+
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryZeroAddress.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(
+                PipelineLoanRegistry.initialize, (address(authority), "name", "symbol", address(0), address(pocket))
+            )
+        );
+
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryZeroAddress.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(
+                PipelineLoanRegistry.initialize, (address(authority), "name", "symbol", address(sPlUsd), address(0))
+            )
+        );
+    }
+
     function test_notConfigured() public {
         PipelineLoanRegistry implementation = new PipelineLoanRegistry();
-        bytes memory data = abi.encodeCall(PipelineLoanRegistry.initialize, (address(authority), "name", "symbol"));
+        bytes memory data = abi.encodeCall(
+            PipelineLoanRegistry.initialize, (address(authority), "name", "symbol", address(sPlUsd), address(pocket))
+        );
         PipelineLoanRegistry bare = PipelineLoanRegistry(address(new ERC1967Proxy(address(implementation), data)));
 
         vm.startPrank(admin);
@@ -1274,18 +1154,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         bare.drawLoan(METADATA_URI, _economics());
 
         bare.setCapitalWallet(capitalWallet);
-        uint256 loanId = bare.drawLoan(METADATA_URI, _economics());
-        bare.disburse(loanId, SENIOR_TRANCHE);
-
-        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNotConfigured.selector);
-        bare.setDefault(loanId);
-
-        bare.setStakedPlUsd(address(sPlUsd));
-        authority.grantRole(uint64(bytes8(keccak256("LOAN_REGISTRY"))), address(bare), 0);
-        bare.setDefault(loanId);
-
-        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNotConfigured.selector);
-        bare.writeDown(loanId, 1);
+        bare.drawLoan(METADATA_URI, _economics());
 
         vm.stopPrank();
     }
@@ -1338,7 +1207,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         loanRegistry.disburse(loanId, 1);
 
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
-        loanRegistry.undisburse(loanId, 0, 1);
+        loanRegistry.undisburse(loanId, 1);
 
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
         loanRegistry.recordPayment(loanId, repayment);
@@ -1358,14 +1227,12 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
     function test_viewsRevertForUnknownLoans() public {
         bytes memory nonExistent =
-            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, 0);
+            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
 
         vm.expectRevert(nonExistent);
         loanRegistry.status(0);
         vm.expectRevert(nonExistent);
         loanRegistry.outstanding(0);
-        vm.expectRevert(nonExistent);
-        loanRegistry.accruedInterest(0);
         vm.expectRevert(nonExistent);
         loanRegistry.loanMoney(0);
         vm.expectRevert(nonExistent);
@@ -1373,22 +1240,9 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.expectRevert(nonExistent);
         loanRegistry.mutableLoanData(0);
         vm.expectRevert(nonExistent);
-        loanRegistry.cumulativeRepaymentData(0);
-        vm.expectRevert(nonExistent);
-        loanRegistry.disbursements(0);
-        vm.expectRevert(nonExistent);
         loanRegistry.economicsEpoch(0, 0);
-        vm.expectRevert(nonExistent);
-        loanRegistry.repaymentData(0, 0);
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 0));
         loanRegistry.tokenURI(0);
-
-        uint256 loanId = _drawLoan();
-
-        vm.expectRevert(
-            abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentRepayment.selector, loanId, 0)
-        );
-        loanRegistry.repaymentData(loanId, 0);
     }
 
     function test_loanMoney() public {
@@ -1444,14 +1298,14 @@ contract LoanRegistryTest is PipelineTestSetUp {
         skip(elapsed);
 
         uint256 expected = _interest(elapsed, rate, firstDraw);
-        assertEq(loanRegistry.accruedInterest(loanId), expected);
+        assertEq(_accruedInterest(loanId), expected);
 
         if (secondDraw != 0) {
             _disburse(loanId, secondDraw);
-            assertEq(loanRegistry.accruedInterest(loanId), expected);
+            assertEq(_accruedInterest(loanId), expected);
 
             skip(elapsed);
-            assertEq(loanRegistry.accruedInterest(loanId), expected + _interest(elapsed, rate, firstDraw + secondDraw));
+            assertEq(_accruedInterest(loanId), expected + _interest(elapsed, rate, firstDraw + secondDraw));
         }
     }
 
@@ -1488,9 +1342,9 @@ contract LoanRegistryTest is PipelineTestSetUp {
         _disburse(loanId, SENIOR_TRANCHE);
     }
 
-    function _disburse(uint256 loanId, uint256 amount) private returns (uint256 index) {
+    function _disburse(uint256 loanId, uint256 amount) private {
         vm.prank(address(minter));
-        return loanRegistry.disburse(loanId, amount);
+        loanRegistry.disburse(loanId, amount);
     }
 
     function _recordPayment(uint256 loanId, ILoanRegistry.RepaymentData memory repayment)
@@ -1498,7 +1352,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         returns (uint256 repaymentId)
     {
         vm.prank(address(minter));
-        return loanRegistry.recordPayment(loanId, repayment);
+        (repaymentId,) = loanRegistry.recordPayment(loanId, repayment);
     }
 
     function _setDefault(uint256 loanId) private {
@@ -1514,6 +1368,10 @@ contract LoanRegistryTest is PipelineTestSetUp {
     function _equity(uint256 amount) private pure returns (ILoanRegistry.RepaymentData memory repayment) {
         repayment.offtakerReceived = amount;
         repayment.equityDistributed = amount;
+    }
+
+    function _accruedInterest(uint256 loanId) private view returns (uint256) {
+        return loanRegistry.loanMoney(loanId).accruedInterest;
     }
 
     function _interest(uint256 elapsed, uint256 rate, uint256 principal) private pure returns (uint256) {

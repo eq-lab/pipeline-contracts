@@ -66,7 +66,7 @@ contract DealTokenFactoryTest is PipelineTestSetUp {
 
     function test_registerDealReverts() public {
         vm.prank(loanRegistryManager);
-        vm.expectRevert(abi.encodeWithSelector(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector, 0));
+        vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
         dealTokenFactory.registerDeal(0);
 
         uint256 loanId = _drawLoan();

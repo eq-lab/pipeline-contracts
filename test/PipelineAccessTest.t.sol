@@ -213,7 +213,7 @@ contract PipelineAccessTest is PipelineTestSetUp {
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.undisburse(0, 0, 0);
+        loanRegistry.undisburse(0, 0);
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
@@ -230,14 +230,6 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         loanRegistry.setCapitalWallet(caller);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.setStakedPlUsd(caller);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        loanRegistry.setPocket(caller);
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
@@ -324,7 +316,7 @@ contract PipelineAccessTest is PipelineTestSetUp {
 
         vm.startPrank(caller);
         vm.expectRevert(unauthorized);
-        minter.recordWireIn(caller, 0, 0, bytes32(0), bytes32(0));
+        minter.recordWireIn(caller, 0, 0, bytes32(0));
         vm.expectRevert(unauthorized);
         minter.repay(0, repayment, 0, bytes32(0), 0);
         vm.expectRevert(unauthorized);
@@ -339,7 +331,7 @@ contract PipelineAccessTest is PipelineTestSetUp {
 
         vm.startPrank(caller);
         vm.expectRevert(unauthorized);
-        minter.assignWireIn(0, caller, bytes32(0));
+        minter.assignWireIn(0, caller);
         vm.expectRevert(unauthorized);
         minter.returnWireIn(0, bytes32(0));
         vm.expectRevert(unauthorized);
@@ -378,10 +370,6 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.startPrank(caller);
         vm.expectRevert(unauthorized);
         minter.setTreasury(caller);
-        vm.expectRevert(unauthorized);
-        minter.setFactory(caller);
-        vm.expectRevert(unauthorized);
-        minter.setPocket(caller);
         vm.expectRevert(unauthorized);
         minter.setCustodians(custodians);
         vm.expectRevert(unauthorized);
