@@ -17,12 +17,11 @@ contract DeployDealTokenFactory is BaseDeployer {
     function _deployUpgradeable() internal override returns (address) {
         address authority = readPlain("AccessManager");
         (address loanRegistry,) = readUpgradeable("PipelineLoanRegistry");
-        (address collateralRegistry,) = readUpgradeable("PipelineCollateralRegistry");
 
         Options memory opts;
         return Upgrades.deployUUPSProxy(
             "PipelineDealTokenFactory.sol",
-            abi.encodeCall(PipelineDealTokenFactory.initialize, (authority, loanRegistry, collateralRegistry)),
+            abi.encodeCall(PipelineDealTokenFactory.initialize, (authority, loanRegistry)),
             opts
         );
     }
