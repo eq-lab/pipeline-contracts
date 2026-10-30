@@ -3,7 +3,6 @@ pragma solidity ^0.8.34;
 
 import {ILoanRegistry} from "../src/interfaces/ILoanRegistry.sol";
 import {LoanRegistryUpgradeable} from "../src/loanRegistry/LoanRegistryUpgradeable.sol";
-import {CollateralRegistryUpgradeable} from "../src/collateralRegistry/CollateralRegistryUpgradeable.sol";
 import {DealToken} from "../src/dealTokenFactory/DealToken.sol";
 import {DealTokenFactoryUpgradeable} from "../src/dealTokenFactory/DealTokenFactoryUpgradeable.sol";
 
@@ -18,23 +17,19 @@ contract DealTokenFactoryTest is PipelineTestSetUp {
     function test_setUp() public view {
         assertEq(dealTokenFactory.authority(), address(authority));
         assertEq(dealTokenFactory.loanRegistry(), address(loanRegistry));
-        assertEq(dealTokenFactory.collateralRegistry(), address(collateralRegistry));
     }
 
     function test_registerDeal() public {
         uint256 loanId = _drawLoan();
         address predictedDebt = dealTokenFactory.debtAddress(loanId);
-        address predictedCargo = dealTokenFactory.cargoAddress(loanId);
 
         vm.expectEmit(address(dealTokenFactory));
-        emit DealTokenFactoryUpgradeable.DealRegistered(loanId, predictedDebt, predictedCargo);
+        emit DealTokenFactoryUpgradeable.DealRegistered(loanId, predictedDebt);
 
         DealTokenFactoryUpgradeable.Deal memory dealData = _registerDeal(loanId);
 
         assertEq(dealData.debt, predictedDebt);
-        assertEq(dealData.cargo, predictedCargo);
         assertEq(dealTokenFactory.deal(loanId).debt, predictedDebt);
-        assertEq(dealTokenFactory.deal(loanId).cargo, predictedCargo);
 
         DealToken debt = DealToken(dealData.debt);
         assertEq(debt.name(), "Pipeline DEBT0000");
@@ -42,11 +37,6 @@ contract DealTokenFactoryTest is PipelineTestSetUp {
         assertEq(debt.decimals(), 6);
         assertEq(debt.factory(), address(dealTokenFactory));
         assertEq(debt.totalSupply(), 0);
-
-        DealToken cargo = DealToken(dealData.cargo);
-        assertEq(cargo.name(), "Pipeline CARGO0000");
-        assertEq(cargo.symbol(), "CARGO0000");
-        assertEq(cargo.factory(), address(dealTokenFactory));
     }
 
     function test_codesArePadded() public {
@@ -55,13 +45,12 @@ contract DealTokenFactoryTest is PipelineTestSetUp {
         assertEq(loanId, 42);
         DealTokenFactoryUpgradeable.Deal memory dealData = _registerDeal(loanId);
         assertEq(DealToken(dealData.debt).symbol(), "DEBT0042");
-        assertEq(DealToken(dealData.cargo).symbol(), "CARGO0042");
 
         vm.store(address(loanRegistry), LOAN_REGISTRY_STORAGE, bytes32(uint256(12_345)));
         loanId = _drawLoan();
         dealData = _registerDeal(loanId);
         assertEq(DealToken(dealData.debt).symbol(), "DEBT12345");
-        assertEq(DealToken(dealData.cargo).name(), "Pipeline CARGO12345");
+        assertEq(DealToken(dealData.debt).name(), "Pipeline DEBT12345");
     }
 
     function test_registerDealReverts() public {
@@ -121,35 +110,6 @@ contract DealTokenFactoryTest is PipelineTestSetUp {
         assertEq(debt.totalSupply(), 0);
     }
 
-    function test_syncCargo() public {
-        uint256 loanId = _drawLoan();
-        DealToken cargo = DealToken(_registerDeal(loanId).cargo);
-
-        vm.startPrank(collateralTrustee);
-        uint256 lotId = collateralRegistry.pledge(loanId, _cargoLot(600 * UNIT));
-        collateralRegistry.pledge(loanId, _cargoLot(400 * UNIT));
-        collateralRegistry.pledge(loanId, _receivableLot(999 * UNIT));
-        vm.stopPrank();
-
-        vm.expectEmit(address(dealTokenFactory));
-        emit DealTokenFactoryUpgradeable.CargoSynced(loanId, 1_000 * UNIT, 0, 1_000 * UNIT, 0);
-
-        dealTokenFactory.syncCargo(loanId);
-        assertEq(cargo.balanceOf(address(dealTokenFactory)), 1_000 * UNIT);
-
-        vm.prank(collateralTrustee);
-        collateralRegistry.release(
-            loanId, lotId, 600 * UNIT, CollateralRegistryUpgradeable.ReleaseReason.Payment, bytes32(0)
-        );
-
-        vm.expectEmit(address(dealTokenFactory));
-        emit DealTokenFactoryUpgradeable.CargoSynced(loanId, 400 * UNIT, 1_000 * UNIT, 0, 600 * UNIT);
-
-        dealTokenFactory.syncCargo(loanId);
-        assertEq(cargo.balanceOf(address(dealTokenFactory)), 400 * UNIT);
-        assertEq(cargo.totalSupply(), 400 * UNIT);
-    }
-
     function test_syncNeedsRegisteredDeal() public {
         uint256 loanId = _drawLoan();
         bytes memory notRegistered =
@@ -157,8 +117,6 @@ contract DealTokenFactoryTest is PipelineTestSetUp {
 
         vm.expectRevert(notRegistered);
         dealTokenFactory.syncDebt(loanId);
-        vm.expectRevert(notRegistered);
-        dealTokenFactory.syncCargo(loanId);
         vm.expectRevert(notRegistered);
         dealTokenFactory.deal(loanId);
     }
@@ -195,7 +153,6 @@ contract DealTokenFactoryTest is PipelineTestSetUp {
 
     function test_setters() public {
         address newLoanRegistry = makeAddr("newLoanRegistry");
-        address newCollateralRegistry = makeAddr("newCollateralRegistry");
 
         vm.startPrank(admin);
 
@@ -203,21 +160,12 @@ contract DealTokenFactoryTest is PipelineTestSetUp {
         emit DealTokenFactoryUpgradeable.LoanRegistrySet(newLoanRegistry);
         dealTokenFactory.setLoanRegistry(newLoanRegistry);
 
-        vm.expectEmit(address(dealTokenFactory));
-        emit DealTokenFactoryUpgradeable.CollateralRegistrySet(newCollateralRegistry);
-        dealTokenFactory.setCollateralRegistry(newCollateralRegistry);
-
         assertEq(dealTokenFactory.loanRegistry(), newLoanRegistry);
-        assertEq(dealTokenFactory.collateralRegistry(), newCollateralRegistry);
 
         vm.expectRevert(DealTokenFactoryUpgradeable.DealTokenFactoryZeroAddress.selector);
         dealTokenFactory.setLoanRegistry(address(0));
         vm.expectRevert(DealTokenFactoryUpgradeable.DealTokenFactorySameValue.selector);
         dealTokenFactory.setLoanRegistry(newLoanRegistry);
-        vm.expectRevert(DealTokenFactoryUpgradeable.DealTokenFactoryZeroAddress.selector);
-        dealTokenFactory.setCollateralRegistry(address(0));
-        vm.expectRevert(DealTokenFactoryUpgradeable.DealTokenFactorySameValue.selector);
-        dealTokenFactory.setCollateralRegistry(newCollateralRegistry);
 
         vm.stopPrank();
     }
@@ -241,26 +189,5 @@ contract DealTokenFactoryTest is PipelineTestSetUp {
     function _registerDeal(uint256 loanId) private returns (DealTokenFactoryUpgradeable.Deal memory) {
         vm.prank(loanRegistryManager);
         return dealTokenFactory.registerDeal(loanId);
-    }
-
-    function _cargoLot(uint256 quantity)
-        private
-        pure
-        returns (CollateralRegistryUpgradeable.PledgeLot memory pledgeLot)
-    {
-        pledgeLot.kind = CollateralRegistryUpgradeable.LotKind.Cargo;
-        pledgeLot.unit = CollateralRegistryUpgradeable.Unit.Dmt;
-        pledgeLot.quantity = quantity;
-        pledgeLot.cargo.commodity = "copper concentrate";
-    }
-
-    function _receivableLot(uint256 quantity)
-        private
-        pure
-        returns (CollateralRegistryUpgradeable.PledgeLot memory pledgeLot)
-    {
-        pledgeLot.kind = CollateralRegistryUpgradeable.LotKind.Receivable;
-        pledgeLot.unit = CollateralRegistryUpgradeable.Unit.Usd;
-        pledgeLot.quantity = quantity;
     }
 }

@@ -190,10 +190,8 @@ contract PipelineTestSetUp is Test {
 
     function _setUpDealTokenFactory() private {
         PipelineDealTokenFactory implementation = new PipelineDealTokenFactory();
-        bytes memory data = abi.encodeCall(
-            PipelineDealTokenFactory.initialize,
-            (address(authority), address(loanRegistry), address(collateralRegistry))
-        );
+        bytes memory data =
+            abi.encodeCall(PipelineDealTokenFactory.initialize, (address(authority), address(loanRegistry)));
         dealTokenFactory = PipelineDealTokenFactory(address(new ERC1967Proxy(address(implementation), data)));
 
         bytes4[] memory selectors = new bytes4[](1);

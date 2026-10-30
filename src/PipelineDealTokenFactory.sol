@@ -11,9 +11,9 @@ contract PipelineDealTokenFactory is UUPSUpgradeable, DealTokenFactoryUpgradeabl
         _disableInitializers();
     }
 
-    function initialize(address authority, address loanRegistry, address collateralRegistry) external initializer {
+    function initialize(address authority, address loanRegistry) external initializer {
         __AccessManaged_init(authority);
-        __DealTokenFactory_init_unchained(loanRegistry, collateralRegistry);
+        __DealTokenFactory_init_unchained(loanRegistry);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override restricted {}
