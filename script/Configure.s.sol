@@ -6,6 +6,7 @@ import {Script} from "forge-std/Script.sol";
 import {Deployments} from "./base/Deployments.sol";
 
 import {PipelineLoanRegistry} from "../src/PipelineLoanRegistry.sol";
+import {PipelineSecurityRecordNft} from "../src/PipelineSecurityRecordNft.sol";
 import {StakedPipelineUSD} from "../src/StakedPipelineUSD.sol";
 import {WhitelistRegistry} from "../src/WhitelistRegistry.sol";
 
@@ -19,8 +20,11 @@ contract Configure is Script, Deployments {
         (address pocket,) = readUpgradeable("PipelinePocket");
         (address minter,) = readUpgradeable("PipelineMinter");
         (address withdrawalQueue,) = readUpgradeable("PipelineWithdrawalQueue");
+        (address securityRegistry,) = readUpgradeable("PipelineSecurityRegistry");
+        (address securityRecordNftProxy,) = readUpgradeable("PipelineSecurityRecordNft");
 
         PipelineLoanRegistry loanRegistry = PipelineLoanRegistry(loanRegistryProxy);
+        PipelineSecurityRecordNft securityRecordNft = PipelineSecurityRecordNft(securityRecordNftProxy);
         StakedPipelineUSD stakedPipelineUSD = StakedPipelineUSD(stakedPipelineUSDProxy);
         WhitelistRegistry whitelistRegistry = WhitelistRegistry(whitelistRegistryProxy);
 
@@ -36,6 +40,9 @@ contract Configure is Script, Deployments {
         if (loanRegistry.maxFeeBps() != maxFeeBps) loanRegistry.setMaxFeeBps(maxFeeBps);
         if (loanRegistry.maxResidual() != maxResidual) loanRegistry.setMaxResidual(maxResidual);
         if (stakedPipelineUSD.pocket() != pocket) stakedPipelineUSD.setPocket(pocket);
+        if (securityRecordNft.securityRegistry() != securityRegistry) {
+            securityRecordNft.setSecurityRegistry(securityRegistry);
+        }
 
         for (uint256 i; i < plUsdHolders.length; ++i) {
             if (!whitelistRegistry.isAllowed(plUsdHolders[i])) whitelistRegistry.allow(plUsdHolders[i]);

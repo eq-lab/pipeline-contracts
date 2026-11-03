@@ -15,7 +15,9 @@ import {PipelineWithdrawalQueue} from "../src/PipelineWithdrawalQueue.sol";
 import {PipelineLoanRegistry} from "../src/PipelineLoanRegistry.sol";
 import {PipelinePocket} from "../src/PipelinePocket.sol";
 import {PipelineMinter} from "../src/PipelineMinter.sol";
-import {PipelineCollateralRegistry} from "../src/PipelineCollateralRegistry.sol";
+import {PipelineSecurityRegistry} from "../src/PipelineSecurityRegistry.sol";
+import {PipelineSecurityRecordNft} from "../src/PipelineSecurityRecordNft.sol";
+import {PipelineSecurityRegistryReader} from "../src/PipelineSecurityRegistryReader.sol";
 import {PipelineDealTokenFactory} from "../src/PipelineDealTokenFactory.sol";
 
 import {WhitelistAccessUpgradeable} from "../src/whitelist/WhitelistAccessUpgradeable.sol";
@@ -25,7 +27,7 @@ import {WithdrawalQueueUpgradeable} from "../src/withdrawalQueue/WithdrawalQueue
 import {WithdrawalQueueShutdownUpgradeable} from "../src/withdrawalQueue/WithdrawalQueueShutdownUpgradeable.sol";
 import {VerifiedRequestsQueueUpgradeable} from "../src/requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
 import {MinterUpgradeable} from "../src/minter/MinterUpgradeable.sol";
-import {CollateralRegistryUpgradeable} from "../src/collateralRegistry/CollateralRegistryUpgradeable.sol";
+import {SecurityRegistryUpgradeable} from "../src/securityRegistry/SecurityRegistryUpgradeable.sol";
 import {DealTokenFactoryUpgradeable} from "../src/dealTokenFactory/DealTokenFactoryUpgradeable.sol";
 
 import {USDCMock} from "./mocks/USDCMock.t.sol";
@@ -40,7 +42,9 @@ contract PipelineTestSetUp is Test {
     PipelineLoanRegistry public loanRegistry;
     PipelinePocket public pocket;
     PipelineMinter public minter;
-    PipelineCollateralRegistry public collateralRegistry;
+    PipelineSecurityRegistry public securityRegistry;
+    PipelineSecurityRecordNft public securityRecordNft;
+    PipelineSecurityRegistryReader public securityRegistryReader;
     PipelineDealTokenFactory public dealTokenFactory;
     USDCMock public usdc = new USDCMock();
 
@@ -58,8 +62,13 @@ contract PipelineTestSetUp is Test {
     address public loanRegistryManager = makeAddr("loanRegistryManager");
     address public mintCaller = makeAddr("mintCaller");
     address public minterOps = makeAddr("minterOps");
-    address public collateralTrustee = makeAddr("collateralTrustee");
-    address public collateralValuer = makeAddr("collateralValuer");
+    address public securityAgent = makeAddr("securityAgent");
+    address public securityRiskCouncil = makeAddr("securityRiskCouncil");
+    address public securityValuer = makeAddr("securityValuer");
+    address public securityInspectionOperator = makeAddr("securityInspectionOperator");
+    address public securityInspectionSecondOperator = makeAddr("securityInspectionSecondOperator");
+    address public securityTrustee = makeAddr("securityTrustee");
+    address public inspector = makeAddr("inspector");
     address public capitalWallet = makeAddr("capitalWallet");
     address public custodian = makeAddr("custodian");
     address public tokenHolder = makeAddr("tokenHolder");
@@ -81,7 +90,7 @@ contract PipelineTestSetUp is Test {
         _setUpPlUsd();
         _setUpSPlUsd();
         _setupLoanRegistry();
-        _setUpCollateralRegistry();
+        _setUpSecurityRegistry();
         _setUpDealTokenFactory();
         _setUpMinterContract();
 
@@ -151,40 +160,93 @@ contract PipelineTestSetUp is Test {
         minter = PipelineMinter(address(new ERC1967Proxy(address(implementation), data)));
     }
 
-    function _setUpCollateralRegistry() private {
-        PipelineCollateralRegistry implementation = new PipelineCollateralRegistry();
-        bytes memory data =
-            abi.encodeCall(PipelineCollateralRegistry.initialize, (address(authority), address(loanRegistry)));
-        collateralRegistry = PipelineCollateralRegistry(address(new ERC1967Proxy(address(implementation), data)));
+    function _setUpSecurityRegistry() private {
+        PipelineSecurityRecordNft nftImplementation = new PipelineSecurityRecordNft();
+        bytes memory nftData = abi.encodeCall(PipelineSecurityRecordNft.initialize, (address(authority)));
+        securityRecordNft = PipelineSecurityRecordNft(address(new ERC1967Proxy(address(nftImplementation), nftData)));
 
-        uint64 roleId = uint64(bytes8(keccak256("COLLATERAL_TRUSTEE")));
+        PipelineSecurityRegistry implementation = new PipelineSecurityRegistry();
+        bytes memory data = abi.encodeCall(
+            PipelineSecurityRegistry.initialize, (address(authority), address(loanRegistry), address(securityRecordNft))
+        );
+        securityRegistry = PipelineSecurityRegistry(address(new ERC1967Proxy(address(implementation), data)));
 
-        bytes4[] memory selectors = new bytes4[](11);
-        selectors[0] = CollateralRegistryUpgradeable.pledge.selector;
-        selectors[1] = CollateralRegistryUpgradeable.setHaircut.selector;
-        selectors[2] = CollateralRegistryUpgradeable.setFloor.selector;
-        selectors[3] = CollateralRegistryUpgradeable.setStage.selector;
-        selectors[4] = CollateralRegistryUpgradeable.setControl.selector;
-        selectors[5] = CollateralRegistryUpgradeable.addDoc.selector;
-        selectors[6] = CollateralRegistryUpgradeable.adjustQuantity.selector;
-        selectors[7] = CollateralRegistryUpgradeable.release.selector;
-        selectors[8] = CollateralRegistryUpgradeable.liquidate.selector;
-        selectors[9] = CollateralRegistryUpgradeable.pause.selector;
-        selectors[10] = CollateralRegistryUpgradeable.unpause.selector;
+        securityRegistryReader = new PipelineSecurityRegistryReader(address(securityRegistry));
+
+        vm.prank(admin);
+        securityRecordNft.setSecurityRegistry(address(securityRegistry));
+
+        uint64 roleId = uint64(bytes8(keccak256("SECURITY_AGENT")));
+
+        bytes4[] memory selectors = new bytes4[](8);
+        selectors[0] = SecurityRegistryUpgradeable.register.selector;
+        selectors[1] = SecurityRegistryUpgradeable.perfect.selector;
+        selectors[2] = SecurityRegistryUpgradeable.handover.selector;
+        selectors[3] = SecurityRegistryUpgradeable.attest.selector;
+        selectors[4] = SecurityRegistryUpgradeable.release.selector;
+        selectors[5] = SecurityRegistryUpgradeable.reportMandateBreach.selector;
+        selectors[6] = SecurityRegistryUpgradeable.startEnforcement.selector;
+        selectors[7] = SecurityRegistryUpgradeable.markEnforced.selector;
 
         vm.startPrank(admin);
-        authority.grantRole(roleId, collateralTrustee, 0);
-        authority.setTargetFunctionRole(address(collateralRegistry), selectors, roleId);
+        authority.grantRole(roleId, securityAgent, 0);
+        authority.setTargetFunctionRole(address(securityRegistry), selectors, roleId);
         vm.stopPrank();
 
-        roleId = uint64(bytes8(keccak256("COLLATERAL_VALUER")));
-
         selectors = new bytes4[](1);
-        selectors[0] = CollateralRegistryUpgradeable.revalue.selector;
+        selectors[0] = PipelineSecurityRecordNft.addDoc.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(securityRecordNft), selectors, roleId);
+
+        roleId = uint64(bytes8(keccak256("SECURITY_RISK_COUNCIL")));
+
+        selectors = new bytes4[](3);
+        selectors[0] = SecurityRegistryUpgradeable.setTerms.selector;
+        selectors[1] = SecurityRegistryUpgradeable.releaseWithConsent.selector;
+        selectors[2] = SecurityRegistryUpgradeable.resolveFlag.selector;
 
         vm.startPrank(admin);
-        authority.grantRole(roleId, collateralValuer, 0);
-        authority.setTargetFunctionRole(address(collateralRegistry), selectors, roleId);
+        authority.grantRole(roleId, securityRiskCouncil, 0);
+        authority.setTargetFunctionRole(address(securityRegistry), selectors, roleId);
+        vm.stopPrank();
+
+        selectors = new bytes4[](1);
+        selectors[0] = PipelineSecurityRecordNft.setInspectors.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(securityRecordNft), selectors, roleId);
+
+        roleId = uint64(bytes8(keccak256("SECURITY_VALUER")));
+
+        selectors = new bytes4[](1);
+        selectors[0] = SecurityRegistryUpgradeable.revalue.selector;
+
+        vm.startPrank(admin);
+        authority.grantRole(roleId, securityValuer, 0);
+        authority.setTargetFunctionRole(address(securityRegistry), selectors, roleId);
+        vm.stopPrank();
+
+        roleId = uint64(bytes8(keccak256("SECURITY_INSPECTION_OPERATOR")));
+
+        selectors = new bytes4[](2);
+        selectors[0] = PipelineSecurityRecordNft.recordInspection.selector;
+        selectors[1] = PipelineSecurityRecordNft.approveInspection.selector;
+
+        vm.startPrank(admin);
+        authority.grantRole(roleId, securityInspectionOperator, 0);
+        authority.grantRole(roleId, securityInspectionSecondOperator, 0);
+        authority.setTargetFunctionRole(address(securityRecordNft), selectors, roleId);
+        vm.stopPrank();
+
+        roleId = uint64(bytes8(keccak256("SECURITY_TRUSTEE")));
+
+        selectors = new bytes4[](1);
+        selectors[0] = SecurityRegistryUpgradeable.recordExtensionConsent.selector;
+
+        vm.startPrank(admin);
+        authority.grantRole(roleId, securityTrustee, 0);
+        authority.setTargetFunctionRole(address(securityRegistry), selectors, roleId);
         vm.stopPrank();
     }
 
@@ -295,6 +357,12 @@ contract PipelineTestSetUp is Test {
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(pocket), selectors, roleId);
+
+        selectors[0] = SecurityRegistryUpgradeable.pause.selector;
+        selectors[1] = SecurityRegistryUpgradeable.unpause.selector;
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(securityRegistry), selectors, roleId);
     }
 
     function _setUpUpgrader() private {
@@ -331,7 +399,10 @@ contract PipelineTestSetUp is Test {
         authority.setTargetFunctionRole(address(minter), selectors, roleId);
 
         vm.prank(admin);
-        authority.setTargetFunctionRole(address(collateralRegistry), selectors, roleId);
+        authority.setTargetFunctionRole(address(securityRegistry), selectors, roleId);
+
+        vm.prank(admin);
+        authority.setTargetFunctionRole(address(securityRecordNft), selectors, roleId);
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(dealTokenFactory), selectors, roleId);

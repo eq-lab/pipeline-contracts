@@ -5,24 +5,21 @@ import {Upgrades, Options} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 import {BaseDeployer} from "../base/BaseDeployer.sol";
 
-import {PipelineCollateralRegistry} from "../../src/PipelineCollateralRegistry.sol";
+import {PipelineSecurityRecordNft} from "../../src/PipelineSecurityRecordNft.sol";
 
-contract DeployCollateralRegistry is BaseDeployer {
+contract DeploySecurityRecordNft is BaseDeployer {
     constructor(string memory tag) BaseDeployer(tag) {}
 
     function key() public pure override returns (string memory) {
-        return "PipelineCollateralRegistry";
+        return "PipelineSecurityRecordNft";
     }
 
     function _deployUpgradeable() internal override returns (address) {
         address authority = readPlain("AccessManager");
-        (address loanRegistry,) = readUpgradeable("PipelineLoanRegistry");
 
         Options memory opts;
         return Upgrades.deployUUPSProxy(
-            "PipelineCollateralRegistry.sol",
-            abi.encodeCall(PipelineCollateralRegistry.initialize, (authority, loanRegistry)),
-            opts
+            "PipelineSecurityRecordNft.sol", abi.encodeCall(PipelineSecurityRecordNft.initialize, (authority)), opts
         );
     }
 

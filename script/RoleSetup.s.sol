@@ -13,7 +13,7 @@ import {SetupDepositManagerAdmin} from "./roles/SetupDepositManagerAdmin.sol";
 import {SetupEmergencyRole} from "./roles/SetupEmergencyRole.sol";
 import {SetupWithdrawalQueueManager} from "./roles/SetupWithdrawalQueueManager.sol";
 import {SetupLoanRegistryManager} from "./roles/SetupLoanRegistryManager.sol";
-import {SetupCollateralRegistryRoles} from "./roles/SetupCollateralRegistryRoles.sol";
+import {SetupSecurityRegistryRoles} from "./roles/SetupSecurityRegistryRoles.sol";
 import {SetupMinterOperators} from "./roles/SetupMinterOperators.sol";
 import {SetupWhitelistManagerRole} from "./roles/SetupWhitelistManagerRole.sol";
 
@@ -27,7 +27,7 @@ contract RoleSetup is Script, Deployments {
         (new SetupEmergencyRole()).run(tag);
         (new SetupWithdrawalQueueManager()).run(tag);
         (new SetupLoanRegistryManager()).run(tag);
-        (new SetupCollateralRegistryRoles()).run(tag);
+        (new SetupSecurityRegistryRoles()).run(tag);
         (new SetupMinterOperators()).run(tag);
         (new SetupWhitelistManagerRole()).run(tag);
     }

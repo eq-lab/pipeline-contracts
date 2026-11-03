@@ -96,13 +96,25 @@ contract ChainValues {
         values[HOODI_CHAIN_ID]["MinterOps"] = bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
         values[HOODI_CHAIN_ID]["MinterOps__Delay"] = bytes32(uint256(0));
 
-        values[HOODI_CHAIN_ID]["CollateralTrustee"] =
-            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
-        values[HOODI_CHAIN_ID]["CollateralTrustee__Delay"] = bytes32(uint256(0));
+        values[HOODI_CHAIN_ID]["SecurityAgent"] = bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODI_CHAIN_ID]["SecurityAgent__Delay"] = bytes32(uint256(0));
 
-        values[HOODI_CHAIN_ID]["CollateralValuer"] =
+        values[HOODI_CHAIN_ID]["SecurityRiskCouncil"] =
             bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
-        values[HOODI_CHAIN_ID]["CollateralValuer__Delay"] = bytes32(uint256(0));
+        values[HOODI_CHAIN_ID]["SecurityRiskCouncil__Delay"] = bytes32(uint256(0));
+
+        values[HOODI_CHAIN_ID]["SecurityValuer"] = bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODI_CHAIN_ID]["SecurityValuer__Delay"] = bytes32(uint256(0));
+
+        values[HOODI_CHAIN_ID]["SecurityInspectionOperator"] =
+            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODI_CHAIN_ID]["SecurityInspectionSecondOperator"] =
+            bytes32(uint256(uint160(0xd3b978148e1Ee61b528354f72b39451c46dCA57C)));
+        values[HOODI_CHAIN_ID]["SecurityInspectionOperator__Delay"] = bytes32(uint256(0));
+
+        values[HOODI_CHAIN_ID]["SecurityTrustee"] =
+            bytes32(uint256(uint160(0xFE1748f511583f6c9349f672593E6312BeDfcE40)));
+        values[HOODI_CHAIN_ID]["SecurityTrustee__Delay"] = bytes32(uint256(0));
     }
 
     function _loadAnvilValues() private {
@@ -154,9 +166,15 @@ contract ChainValues {
             bytes32(uint256(uint160(0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc)));
         values[ANVIL_CHAIN_ID]["MintCaller"] = bytes32(uint256(uint160(0x976EA74026E726554dB657fA54763abd0C3a0aa9)));
         values[ANVIL_CHAIN_ID]["MinterOps"] = bytes32(uint256(uint160(0x14dC79964da2C08b23698B3D3cc7Ca32193d9955)));
-        values[ANVIL_CHAIN_ID]["CollateralTrustee"] =
-            bytes32(uint256(uint160(0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f)));
-        values[ANVIL_CHAIN_ID]["CollateralValuer"] =
-            bytes32(uint256(uint160(0xa0Ee7A142d267C1f36714E4a8F75612F20a79720)));
+        values[ANVIL_CHAIN_ID]["SecurityAgent"] = bytes32(uint256(uint160(0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f)));
+        values[ANVIL_CHAIN_ID]["SecurityRiskCouncil"] =
+            bytes32(uint256(uint160(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266)));
+        values[ANVIL_CHAIN_ID]["SecurityValuer"] = bytes32(uint256(uint160(0xa0Ee7A142d267C1f36714E4a8F75612F20a79720)));
+        values[ANVIL_CHAIN_ID]["SecurityInspectionOperator"] =
+            bytes32(uint256(uint160(0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC)));
+        values[ANVIL_CHAIN_ID]["SecurityInspectionSecondOperator"] =
+            bytes32(uint256(uint160(0x90F79bf6EB2c4f870365E785982E1f101E93b906)));
+        values[ANVIL_CHAIN_ID]["SecurityTrustee"] =
+            bytes32(uint256(uint160(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266)));
     }
 }

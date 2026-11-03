@@ -7,7 +7,9 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
 import {ILoanRegistry} from "../src/interfaces/ILoanRegistry.sol";
 import {MinterUpgradeable} from "../src/minter/MinterUpgradeable.sol";
-import {CollateralRegistryUpgradeable} from "../src/collateralRegistry/CollateralRegistryUpgradeable.sol";
+import {ISecurityRecordNft} from "../src/interfaces/ISecurityRecordNft.sol";
+import {ISecurityRegistry} from "../src/interfaces/ISecurityRegistry.sol";
+import {SecurityRegistryUpgradeable} from "../src/securityRegistry/SecurityRegistryUpgradeable.sol";
 
 import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 
@@ -80,6 +82,10 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         UUPSUpgradeable(address(loanRegistry)).upgradeToAndCall(address(loanRegistry), "");
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        UUPSUpgradeable(address(securityRecordNft)).upgradeToAndCall(address(securityRecordNft), "");
     }
 
     function testFuzz_depositManagerAccess(address caller) public {
@@ -383,54 +389,104 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.stopPrank();
     }
 
-    function testFuzz_collateralTrusteeAccess(address caller) public {
-        vm.assume(caller != collateralTrustee);
+    function testFuzz_securityAgentAccess(address caller) public {
+        vm.assume(caller != securityAgent);
 
-        CollateralRegistryUpgradeable.PledgeLot memory pledgeLot;
-        CollateralRegistryUpgradeable.Location memory location;
-        CollateralRegistryUpgradeable.Control memory control;
+        ISecurityRegistry.NewRecord memory newRecord;
         bytes memory unauthorized = abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller);
 
         vm.startPrank(caller);
         vm.expectRevert(unauthorized);
-        collateralRegistry.pledge(0, pledgeLot);
+        securityRegistry.register(0, 0, newRecord);
         vm.expectRevert(unauthorized);
-        collateralRegistry.setHaircut(0, 0, 0);
+        securityRegistry.perfect(0, bytes32(0));
         vm.expectRevert(unauthorized);
-        collateralRegistry.setFloor(0, 0);
+        securityRegistry.handover(0, 0, bytes32(0));
         vm.expectRevert(unauthorized);
-        collateralRegistry.setStage(0, 0, CollateralRegistryUpgradeable.LotStage.Pledged, false, location);
+        securityRegistry.attest(0);
         vm.expectRevert(unauthorized);
-        collateralRegistry.setControl(0, 0, control);
+        securityRecordNft.addDoc(0, ISecurityRecordNft.DocKind.Ebl, bytes32(0));
         vm.expectRevert(unauthorized);
-        collateralRegistry.addDoc(0, 0, CollateralRegistryUpgradeable.DocKind.Ebl, bytes32(0));
+        securityRegistry.release(0, bytes32(0));
         vm.expectRevert(unauthorized);
-        collateralRegistry.adjustQuantity(0, 0, 0, "", bytes32(0));
+        securityRegistry.reportMandateBreach(0, bytes32(0));
         vm.expectRevert(unauthorized);
-        collateralRegistry.release(0, 0, 0, CollateralRegistryUpgradeable.ReleaseReason.Payment, bytes32(0));
+        securityRegistry.startEnforcement(0);
         vm.expectRevert(unauthorized);
-        collateralRegistry.liquidate(0, 0, 0);
-        vm.expectRevert(unauthorized);
-        collateralRegistry.pause();
-        vm.expectRevert(unauthorized);
-        collateralRegistry.unpause();
+        securityRegistry.markEnforced(0, bytes32(0));
         vm.stopPrank();
     }
 
-    function testFuzz_collateralValuerAccess(address caller) public {
-        vm.assume(caller != collateralValuer);
+    function testFuzz_securityRiskCouncilAccess(address caller) public {
+        vm.assume(caller != securityRiskCouncil);
+
+        ISecurityRegistry.Terms memory terms;
+        bytes memory unauthorized = abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller);
+
+        vm.startPrank(caller);
+        vm.expectRevert(unauthorized);
+        securityRegistry.setTerms(0, terms);
+        vm.expectRevert(unauthorized);
+        securityRegistry.releaseWithConsent(0, bytes32(0));
+        vm.expectRevert(unauthorized);
+        securityRegistry.resolveFlag(0, ISecurityRegistry.FlagOutcome.Accepted, bytes32(0));
+        vm.expectRevert(unauthorized);
+        securityRecordNft.setInspectors(new address[](0));
+        vm.stopPrank();
+    }
+
+    function testFuzz_securityInspectionOperatorAccess(address caller) public {
+        vm.assume(caller != securityInspectionOperator && caller != securityInspectionSecondOperator);
+
+        ISecurityRecordNft.NewInspection memory newInspection;
+        bytes memory unauthorized = abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller);
+
+        vm.startPrank(caller);
+        vm.expectRevert(unauthorized);
+        securityRecordNft.recordInspection(0, newInspection);
+        vm.expectRevert(unauthorized);
+        securityRecordNft.approveInspection(0);
+        vm.stopPrank();
+    }
+
+    function testFuzz_securityTrusteeAccess(address caller) public {
+        vm.assume(caller != securityTrustee);
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        collateralRegistry.revalue(0, 0, 0, bytes32(0), bytes32(0));
+        securityRegistry.recordExtensionConsent(0, 0, bytes32(0));
     }
 
-    function testFuzz_collateralAdminAccess(address caller) public {
+    function testFuzz_securityValuerAccess(address caller) public {
+        vm.assume(caller != securityValuer);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        securityRegistry.revalue(0, 0, bytes32(0), bytes32(0));
+    }
+
+    function testFuzz_securityPauserAccess(address caller) public {
+        vm.assume(caller != pauser);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        securityRegistry.pause();
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        securityRegistry.unpause();
+    }
+
+    function testFuzz_securityAdminAccess(address caller) public {
         vm.assume(caller != admin);
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        collateralRegistry.setLoanRegistry(caller);
+        securityRegistry.setLoanRegistry(caller);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        securityRecordNft.setSecurityRegistry(caller);
     }
 
     function testFuzz_dealTokenFactoryAccess(address caller) public {
