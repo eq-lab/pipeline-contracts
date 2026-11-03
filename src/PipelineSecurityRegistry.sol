@@ -3,17 +3,17 @@ pragma solidity =0.8.34;
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import {CollateralRegistryUpgradeable} from "./collateralRegistry/CollateralRegistryUpgradeable.sol";
+import {SecurityRegistryUpgradeable} from "./securityRegistry/SecurityRegistryUpgradeable.sol";
 
 /// @custom:oz-upgrades-unsafe-allow constructor
-contract PipelineCollateralRegistry is UUPSUpgradeable, CollateralRegistryUpgradeable {
+contract PipelineSecurityRegistry is UUPSUpgradeable, SecurityRegistryUpgradeable {
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(address authority, address loanRegistry) external initializer {
+    function initialize(address authority, address loanRegistry, address recordNft) external initializer {
         __AccessManaged_init(authority);
-        __CollateralRegistry_init_unchained(loanRegistry);
+        __SecurityRegistry_init_unchained(loanRegistry, recordNft);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override restricted {}
