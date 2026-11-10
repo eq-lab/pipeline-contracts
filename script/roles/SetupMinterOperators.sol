@@ -23,7 +23,7 @@ contract SetupMinterOperators is Script, Deployments {
         mintSelectors[1] = MinterUpgradeable.repay.selector;
         mintSelectors[2] = MinterUpgradeable.recordIncome.selector;
 
-        bytes4[] memory opsSelectors = new bytes4[](12);
+        bytes4[] memory opsSelectors = new bytes4[](13);
         opsSelectors[0] = MinterUpgradeable.assignWireIn.selector;
         opsSelectors[1] = MinterUpgradeable.returnWireIn.selector;
         opsSelectors[2] = MinterUpgradeable.disburse.selector;
@@ -36,6 +36,7 @@ contract SetupMinterOperators is Script, Deployments {
         opsSelectors[9] = MinterUpgradeable.recordExpense.selector;
         opsSelectors[10] = MinterUpgradeable.recordCorrection.selector;
         opsSelectors[11] = MinterUpgradeable.correctVaultMint.selector;
+        opsSelectors[12] = MinterUpgradeable.cancelYield.selector;
 
         address mintCaller = address(uint160(uint256(valueOf("MintCaller", false))));
         uint32 mintCallerDelay = uint32(uint256(valueOf("MintCaller__Delay", true)));

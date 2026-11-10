@@ -15,6 +15,7 @@ import {PipelineWithdrawalQueue} from "../src/PipelineWithdrawalQueue.sol";
 import {PipelineLoanRegistry} from "../src/PipelineLoanRegistry.sol";
 import {PipelinePocket} from "../src/PipelinePocket.sol";
 import {PipelineMinter} from "../src/PipelineMinter.sol";
+import {PipelineMinterReader} from "../src/PipelineMinterReader.sol";
 import {PipelineSecurityRegistry} from "../src/PipelineSecurityRegistry.sol";
 import {PipelineSecurityRecordNft} from "../src/PipelineSecurityRecordNft.sol";
 import {PipelineSecurityRegistryReader} from "../src/PipelineSecurityRegistryReader.sol";
@@ -42,6 +43,7 @@ contract PipelineTestSetUp is Test {
     PipelineLoanRegistry public loanRegistry;
     PipelinePocket public pocket;
     PipelineMinter public minter;
+    PipelineMinterReader public minterReader;
     PipelineSecurityRegistry public securityRegistry;
     PipelineSecurityRecordNft public securityRecordNft;
     PipelineSecurityRegistryReader public securityRegistryReader;
@@ -158,6 +160,7 @@ contract PipelineTestSetUp is Test {
             )
         );
         minter = PipelineMinter(address(new ERC1967Proxy(address(implementation), data)));
+        minterReader = new PipelineMinterReader(address(minter));
     }
 
     function _setUpSecurityRegistry() private {
@@ -559,7 +562,7 @@ contract PipelineTestSetUp is Test {
 
         roleId = uint64(bytes8(keccak256("MINTER_OPS")));
 
-        selectors = new bytes4[](14);
+        selectors = new bytes4[](15);
         selectors[0] = MinterUpgradeable.assignWireIn.selector;
         selectors[1] = MinterUpgradeable.returnWireIn.selector;
         selectors[2] = MinterUpgradeable.disburse.selector;
@@ -572,8 +575,9 @@ contract PipelineTestSetUp is Test {
         selectors[9] = MinterUpgradeable.recordExpense.selector;
         selectors[10] = MinterUpgradeable.recordCorrection.selector;
         selectors[11] = MinterUpgradeable.correctVaultMint.selector;
-        selectors[12] = MinterUpgradeable.pause.selector;
-        selectors[13] = MinterUpgradeable.unpause.selector;
+        selectors[12] = MinterUpgradeable.cancelYield.selector;
+        selectors[13] = MinterUpgradeable.pause.selector;
+        selectors[14] = MinterUpgradeable.unpause.selector;
 
         vm.startPrank(admin);
         authority.grantRole(roleId, minterOps, 0);

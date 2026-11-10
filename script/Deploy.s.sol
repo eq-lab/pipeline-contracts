@@ -14,6 +14,7 @@ import {DeploySecurityRegistry} from "./deployers/DeploySecurityRegistry.sol";
 import {DeploySecurityRegistryReader} from "./deployers/DeploySecurityRegistryReader.sol";
 import {DeployDealTokenFactory} from "./deployers/DeployDealTokenFactory.sol";
 import {DeployMinter} from "./deployers/DeployMinter.sol";
+import {DeployMinterReader} from "./deployers/DeployMinterReader.sol";
 import {DeployDepositManager} from "./deployers/DeployDepositManager.sol";
 import {DeployWithdrawalQueue} from "./deployers/DeployWithdrawalQueue.sol";
 
@@ -34,6 +35,7 @@ contract Deploy is Script {
         address securityRegistryReader = (new DeploySecurityRegistryReader(tag)).deployPlain();
         (address dealTokenFactory,) = (new DeployDealTokenFactory(tag)).deployUpgradeable();
         (address minter,) = (new DeployMinter(tag)).deployUpgradeable();
+        (new DeployMinterReader(tag)).deployPlain();
         (address depositManager,) = (new DeployDepositManager(tag)).deployUpgradeable();
         (address withdrawalQueue,) = (new DeployWithdrawalQueue(tag)).deployUpgradeable();
 
