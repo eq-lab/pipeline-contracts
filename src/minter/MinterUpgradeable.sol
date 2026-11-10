@@ -6,6 +6,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 import {RateLimiterUpgradeable} from "../depositManager/RateLimiterUpgradeable.sol";
 import {IDealTokenFactory} from "../interfaces/IDealTokenFactory.sol";
@@ -13,6 +14,7 @@ import {ILoanRegistry} from "../interfaces/ILoanRegistry.sol";
 import {IPipelineUSD} from "../interfaces/IPipelineUSD.sol";
 import {IPocket} from "../interfaces/IPocket.sol";
 import {IStakedPipelineUSD} from "../interfaces/IStakedPipelineUSD.sol";
+import {YieldVesting} from "./YieldVesting.sol";
 
 abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeable {
     using SafeERC20 for IPipelineUSD;
@@ -73,6 +75,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         uint256 fees;
         uint256 released;
         bool carvedOut;
+        uint64 yieldEpoch;
     }
 
     struct AddressesConfig {
@@ -114,6 +117,9 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     event CashCorrected(uint256 indexed originalId, uint256 entryId, int256 delta, bytes32 reasonHash);
     event MintCorrected(uint256 amount, bytes32 refHash);
     event LossAbsorbed(uint256 requested, uint256 pulled);
+    event YieldBooked(uint256 indexed epoch, uint256 amount);
+    event YieldReleased(uint256 amount);
+    event YieldCancelled(uint256 indexed epoch, uint256 amount, uint256 minted, bytes32 refHash);
     event TreasurySet(address treasury);
     event CustodiansSet(address[] custodians);
 
@@ -136,6 +142,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     error MinterAlreadyReversed();
     error MinterWrongEntry();
     error MinterPulledMoreThanRequested(uint256 requested, uint256 pulled);
+    error MinterExceedsBookedYield();
 
     /// @custom:storage-location erc7201:pipeline.storage.Minter
     struct MinterStorage {
@@ -160,6 +167,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         mapping(uint256 entryId => Disbursement) disbursements;
         mapping(uint256 loanId => mapping(uint256 repaymentId => Repayment)) repayments;
         mapping(bytes32 refHash => bool) refHashesSeen;
+        YieldVesting.Schedule yieldSchedule;
     }
 
     // keccak256(abi.encode(uint256(keccak256("pipeline.storage.Minter")) - 1)) & ~bytes32(uint256(0xff))
@@ -306,12 +314,13 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         (repaymentId, carvedOut) = $.loanRegistry.recordPayment(loanId, repaymentData);
 
         uint256 released;
+        uint64 yieldEpoch;
         if (carvedOut) {
             IPocket _pocket = $.pocket;
             if (interest != 0) _mintPlUsd($, address(_pocket), interest);
             released = _pocket.release(loanId, repaymentData.seniorPrincipalRepaid, interest);
         } else if (interest != 0) {
-            _mintPlUsd($, address($.stakedPlUsd), interest);
+            yieldEpoch = _bookYield($, interest);
         }
 
         uint256 feeShares;
@@ -322,8 +331,9 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
 
         _syncDebt($, loanId);
 
-        $.repayments[loanId][repaymentId] =
-            Repayment({feeShares: feeShares, fees: fees, released: released, carvedOut: carvedOut});
+        $.repayments[loanId][repaymentId] = Repayment({
+            feeShares: feeShares, fees: fees, released: released, carvedOut: carvedOut, yieldEpoch: yieldEpoch
+        });
 
         emit CashRepaid(loanId, repaymentId, saleId, cash, interest, feeShares, valueDate, refHash);
     }
@@ -340,6 +350,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
 
         uint256 feeShares = record.feeShares;
         if (feeShares != 0) {
+            _release($);
             uint256 assets = $.stakedPlUsd.burnShares($.treasury, feeShares);
             if (assets != 0) _burnPlUsd($, assets);
             if (assets < fees) _absorb($, fees - assets);
@@ -347,8 +358,8 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
 
         if (record.carvedOut) {
             $.pocket.unrelease(loanId, record.released, interest);
-        } else {
-            _absorb($, interest);
+        } else if (interest != 0) {
+            _absorb($, _unbookYield($, interest, record.yieldEpoch));
         }
 
         _syncDebt($, loanId);
@@ -447,7 +458,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         _consumeMintRef($, refHash);
         _applyRateLimits(delta);
         $.bankCash += delta;
-        _mintPlUsd($, address($.stakedPlUsd), delta);
+        _bookYield($, delta);
 
         _recordCash($, CashReason.Income, delta.toInt256(), valueDate, refHash);
     }
@@ -485,6 +496,21 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         emit MintCorrected(amount, refHash);
     }
 
+    function releaseYield() external whenNotPaused returns (uint256) {
+        return _release(_getMinterStorage());
+    }
+
+    function cancelYield(uint256 amount, uint256 epoch, bytes32 refHash) external restricted {
+        if (amount == 0) revert MinterInvalidAmount();
+
+        MinterStorage storage $ = _getMinterStorage();
+        _consumeRef($, refHash);
+        uint256 minted = _unbookYield($, amount, epoch);
+        _absorb($, minted);
+
+        emit YieldCancelled(epoch, amount, minted, refHash);
+    }
+
     function setTreasury(address newTreasury) external restricted {
         _setTreasury(_getMinterStorage(), newTreasury);
     }
@@ -506,57 +532,8 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         _unpause();
     }
 
-    function addressesConfig() external view returns (AddressesConfig memory) {
-        MinterStorage storage $ = _getMinterStorage();
-        return AddressesConfig({
-            plUsd: address($.plUsd),
-            stakedPlUsd: address($.stakedPlUsd),
-            loanRegistry: address($.loanRegistry),
-            pocket: address($.pocket),
-            usdc: address($.usdc),
-            treasury: $.treasury,
-            factory: $.factory
-        });
-    }
-
-    function custodians() external view returns (address[] memory) {
-        return _getMinterStorage().custodians;
-    }
-
-    function bankCash() external view returns (uint256) {
-        return _getMinterStorage().bankCash;
-    }
-
-    function inFlight() external view returns (uint256) {
-        return _getMinterStorage().inFlight;
-    }
-
-    function unabsorbedTotal() external view returns (uint256) {
-        return _getMinterStorage().unabsorbedTotal;
-    }
-
-    function wireIn(uint256 id) external view returns (WireIn memory) {
-        return _existingWireIn(_getMinterStorage(), id);
-    }
-
-    function wireOut(uint256 id) external view returns (WireOut memory) {
-        return _existingWireOut(_getMinterStorage(), id);
-    }
-
-    function ramp(uint256 id) external view returns (Ramp memory) {
-        return _existingRamp(_getMinterStorage(), id);
-    }
-
-    function disbursement(uint256 entryId) external view returns (Disbursement memory) {
-        return _existingDisbursement(_getMinterStorage(), entryId);
-    }
-
-    function repayment(uint256 loanId, uint256 repaymentId) external view returns (Repayment memory) {
-        return _getMinterStorage().repayments[loanId][repaymentId];
-    }
-
-    function refHashSeen(bytes32 refHash) external view returns (bool) {
-        return _getMinterStorage().refHashesSeen[refHash];
+    function extsload(bytes32 slot) external view returns (bytes32) {
+        return StorageSlot.getBytes32Slot(slot).value;
     }
 
     function _setTreasury(MinterStorage storage $, address newTreasury) private {
@@ -596,6 +573,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         IPipelineUSD _plUsd = $.plUsd;
         if (!_plUsd.hasAccess(receiver)) revert MinterReceiverNotAllowed(receiver);
 
+        _release($);
         IStakedPipelineUSD _stakedPlUsd = $.stakedPlUsd;
         _plUsd.forceApprove(address(_stakedPlUsd), amount);
         return _stakedPlUsd.deposit(amount, receiver);
@@ -604,12 +582,55 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     function _absorb(MinterStorage storage $, uint256 amount) private {
         if (amount == 0) return;
 
+        _release($);
         uint256 pulled = $.stakedPlUsd.pull(amount);
         if (pulled > amount) revert MinterPulledMoreThanRequested(amount, pulled);
         if (pulled != 0) _burnPlUsd($, pulled);
         $.unabsorbedTotal += amount - pulled;
 
         emit LossAbsorbed(amount, pulled);
+    }
+
+    function _release(MinterStorage storage $) private returns (uint256 due) {
+        YieldVesting.Schedule memory schedule;
+        (schedule, due) = YieldVesting.current($.yieldSchedule, block.timestamp);
+        $.yieldSchedule = schedule;
+        if (due != 0) {
+            _mintPlUsd($, address($.stakedPlUsd), due);
+
+            emit YieldReleased(due);
+        }
+    }
+
+    function _bookYield(MinterStorage storage $, uint256 amount) private returns (uint64 epoch) {
+        _release($);
+        YieldVesting.Schedule storage schedule = $.yieldSchedule;
+        schedule.accruing += amount;
+        epoch = uint64(schedule.epoch);
+
+        emit YieldBooked(epoch, amount);
+    }
+
+    function _unbookYield(MinterStorage storage $, uint256 amount, uint256 booked) private returns (uint256 minted) {
+        _release($);
+        YieldVesting.Schedule storage schedule = $.yieldSchedule;
+        uint256 epoch = schedule.epoch;
+        if (booked > epoch) revert MinterExceedsBookedYield();
+
+        if (booked == epoch) {
+            if (amount > schedule.accruing) revert MinterExceedsBookedYield();
+            schedule.accruing -= amount;
+        } else if (booked + 1 == epoch) {
+            uint256 vesting = schedule.vesting;
+            if (amount > vesting) revert MinterExceedsBookedYield();
+            vesting -= amount;
+            uint256 released = YieldVesting.vested(vesting, block.timestamp);
+            minted = schedule.released - released;
+            schedule.vesting = vesting;
+            schedule.released = released;
+        } else {
+            minted = amount;
+        }
     }
 
     function _syncDebt(MinterStorage storage $, uint256 loanId) private {

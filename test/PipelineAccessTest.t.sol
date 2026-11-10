@@ -361,6 +361,8 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.expectRevert(unauthorized);
         minter.correctVaultMint(0, bytes32(0));
         vm.expectRevert(unauthorized);
+        minter.cancelYield(0, 0, bytes32(0));
+        vm.expectRevert(unauthorized);
         minter.pause();
         vm.expectRevert(unauthorized);
         minter.unpause();
