@@ -106,6 +106,7 @@ interface ILoanRegistry {
     function status(uint256 loanId) external view returns (LoanStatus);
     function outstanding(uint256 loanId) external view returns (uint256);
     function loanMoney(uint256 loanId) external view returns (LoanMoney memory);
+    function immutableLoanData(uint256 loanId) external view returns (ImmutableLoanData memory);
     function outstandingTotal() external view returns (uint256);
     function unabsorbedTotal() external view returns (uint256);
     function economicsEpoch(uint256 loanId, uint256 epochId) external view returns (EconomicsEpoch memory);

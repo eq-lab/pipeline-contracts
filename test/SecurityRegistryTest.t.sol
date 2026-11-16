@@ -7,6 +7,7 @@ import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Pau
 import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 import {ILoanRegistry} from "../src/interfaces/ILoanRegistry.sol";
 import {ISecurityRecordNft} from "../src/interfaces/ISecurityRecordNft.sol";
@@ -23,6 +24,7 @@ contract SecurityRegistryTest is PipelineTestSetUp {
     uint64 constant DAY = 1 days;
     uint64 constant START = 1_000 days;
     uint256 constant SENIOR = 6_000_000 * UNIT;
+    uint256 constant POOL_SHARE = 9_000_000 * UNIT;
     bytes32 constant LME = "LME";
     bytes32 constant RECORDS_SLOT =
         bytes32(uint256(0xe4c932a8d46f090712464e8bf71540462c3831ff6628970c190523ba96dea900) + 4);
@@ -750,6 +752,48 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         assertEq(_marginCallAt(loanId), 0);
     }
 
+    function test_ltvAndCoverageCountTheCoLendersShare() public {
+        uint256 loanId = _coLentLoan();
+        _active(loanId, _usdRecord(ISecurityRegistry.Protection.AssignedReceivable, 12_500_000));
+        _disburse(loanId, POOL_SHARE);
+
+        vm.prank(loanRegistryManager);
+        loanRegistry.adjustInterest(loanId, int256(180_000 * UNIT), _h(18));
+        securityRegistry.checkCoverage(loanId);
+
+        PipelineSecurityRegistryReader.CoverageDetail memory detail = securityRegistryReader.coverageDetail(loanId);
+        assertEq(detail.debt, 10_200_000 * UNIT);
+        assertEq(detail.ltvBps, 8_160);
+        assertEq(detail.coverageBps, 12_254);
+        assertEq(securityRegistry.coverage(loanId), 12_254);
+        assertEq(detail.marginCallAt, 0);
+    }
+
+    function test_aMarginCallOpensOnTheWholeFacilitysLtv() public {
+        uint256 loanId = _coLentLoan();
+        _active(loanId, _usdRecord(ISecurityRegistry.Protection.AssignedReceivable, 11_500_000));
+        _disburse(loanId, POOL_SHARE);
+
+        vm.expectEmit(address(securityRegistry));
+        emit SecurityRegistryUpgradeable.MarginCall(loanId, 8_696, 8_500, START + 7 * DAY);
+
+        securityRegistry.checkCoverage(loanId);
+    }
+
+    function test_releaseNeedsRoomUnderTheAdvanceRatioForTheWholeFacility() public {
+        uint256 loanId = _coLentLoan();
+        _active(loanId, _usdRecord(ISecurityRegistry.Protection.AssignedReceivable, 12_000_000));
+        uint256 cash = _active(loanId, _usdRecord(ISecurityRegistry.Protection.CashCover, 1_000_000));
+        _disburse(loanId, POOL_SHARE);
+
+        vm.prank(securityAgent);
+        vm.expectRevert(SecurityRegistryUpgradeable.SecurityRegistryLtvTooHigh.selector);
+        securityRegistry.release(cash, _h(10));
+
+        _active(loanId, _usdRecord(ISecurityRegistry.Protection.CashCover, 500_000));
+        _release(cash);
+    }
+
     function test_marginCallOpensAboveTheMarginCallRatioAndCuresAtTheAdvanceRatio() public {
         uint256 loanId = _loanWithTerms();
         uint256 warehouse = _active(loanId, _goodsRecord(ISecurityRegistry.Protection.WarehousePledge, 9_984));
@@ -787,6 +831,46 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         assertEq(uint8(securityRegistry.record(topUp).status), uint8(ISecurityRegistry.RecordStatus.Active));
     }
 
+    function test_aDefaultBreachSignalsAboveTheDefaultRatioAndClearsBelowIt() public {
+        uint256 loanId = _loanWithTerms();
+        uint256 blId = _active(loanId, _bl(10_000));
+        _revalue(blId, 10_000);
+        assertEq(_defaultBreachAt(loanId), 0);
+
+        _revalue(blId, 7_000);
+        assertEq(_marginCallAt(loanId), START);
+        assertEq(_defaultBreachAt(loanId), 0);
+
+        uint64 day10 = START + 10 * DAY;
+        vm.warp(day10);
+        uint32 ltvBps = _expectedLtv(loanId, 6_500_000 * UNIT);
+
+        vm.expectEmit(address(securityRegistry));
+        emit SecurityRegistryUpgradeable.DefaultBreach(loanId, ltvBps, 9_000);
+
+        _revalue(blId, 6_500);
+        assertEq(_defaultBreachAt(loanId), day10);
+        assertEq(_marginCallAt(loanId), START);
+
+        vm.warp(day10 + DAY);
+        vm.recordLogs();
+        _revalue(blId, 6_000);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertNotEq(logs[i].topics[0], SecurityRegistryUpgradeable.DefaultBreach.selector);
+        }
+        assertEq(_defaultBreachAt(loanId), day10);
+
+        ltvBps = _expectedLtv(loanId, 7_000_000 * UNIT);
+
+        vm.expectEmit(address(securityRegistry));
+        emit SecurityRegistryUpgradeable.DefaultBreachCleared(loanId, ltvBps);
+
+        _revalue(blId, 7_000);
+        assertEq(_defaultBreachAt(loanId), 0);
+        assertEq(_marginCallAt(loanId), START);
+    }
+
     function test_aStalePriceOpensNoMarginCall() public {
         uint256 loanId = _loanWithTerms();
         uint256 first = _active(loanId, _bl(10_000));
@@ -801,16 +885,46 @@ contract SecurityRegistryTest is PipelineTestSetUp {
 
         vm.expectEmit(address(securityRegistry));
         emit SecurityRegistryUpgradeable.PriceStale(loanId, ltvBps, 8_500);
+        vm.expectEmit(address(securityRegistry));
+        emit SecurityRegistryUpgradeable.DefaultBreachPriceStale(loanId, ltvBps, 9_000);
 
         _revalue(second, 1_000);
         securityRegistry.checkCoverage(loanId);
         assertEq(_marginCallAt(loanId), 0);
+        assertEq(_defaultBreachAt(loanId), 0);
         assertEq(securityRegistryReader.markAge(loanId), 3 * DAY);
 
         ISecurityRegistry.Terms memory terms = _copperTerms();
         terms.priceStaleAfter = 0;
         _setTerms(loanId, terms);
         assertEq(_marginCallAt(loanId), day3);
+        assertEq(_defaultBreachAt(loanId), day3);
+    }
+
+    function test_aStalePriceHoldingBackADefaultBreachSaysSo() public {
+        uint256 loanId = _loanWithTerms();
+        uint256 first = _active(loanId, _bl(10_000));
+        uint256 second = _active(loanId, _bl(10_000));
+        _revalue(first, 3_500);
+        _revalue(second, 3_500);
+        assertEq(_marginCallAt(loanId), START);
+        assertEq(_defaultBreachAt(loanId), 0);
+
+        uint64 day3 = START + 3 * DAY;
+        vm.warp(day3);
+        uint32 ltvBps = _expectedLtv(loanId, 5_500_000 * UNIT);
+
+        vm.expectEmit(address(securityRegistry));
+        emit SecurityRegistryUpgradeable.DefaultBreachPriceStale(loanId, ltvBps, 9_000);
+
+        _revalue(second, 2_000);
+        assertEq(_defaultBreachAt(loanId), 0);
+
+        vm.expectEmit(address(securityRegistry));
+        emit SecurityRegistryUpgradeable.DefaultBreach(loanId, ltvBps, 9_000);
+
+        _revalue(first, 3_500);
+        assertEq(_defaultBreachAt(loanId), day3);
     }
 
     function test_separateLotsAddUpAndEnforcementStopsCounting() public {
@@ -855,7 +969,7 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         assertEq(securityRegistry.coverage(loanId), 0);
     }
 
-    function test_setTermsKeepsTheContractsMarginCall() public {
+    function test_setTermsKeepsTheContractsMarginCallAndBreach() public {
         uint256 loanId = _drawLoan(true);
 
         vm.expectRevert(SecurityRegistryUpgradeable.SecurityRegistryNoTerms.selector);
@@ -863,21 +977,38 @@ contract SecurityRegistryTest is PipelineTestSetUp {
 
         ISecurityRegistry.Terms memory terms = _copperTerms();
         terms.marginCallAt = 123;
+        terms.defaultBreachAt = 456;
         _setTerms(loanId, terms);
-        assertEq(_marginCallAt(loanId), START);
 
-        vm.warp(START + DAY);
         ISecurityRegistry.Terms memory expected = _copperTerms();
         expected.marginCallAt = START;
+        expected.defaultBreachAt = START;
+        assertEq(abi.encode(securityRegistry.terms(loanId)), abi.encode(expected));
+
+        vm.warp(START + DAY);
 
         vm.expectEmit(address(securityRegistry));
         emit SecurityRegistryUpgradeable.TermsSet(loanId, expected);
 
         _setTerms(loanId, _copperTerms());
         assertEq(_marginCallAt(loanId), START);
+        assertEq(_defaultBreachAt(loanId), START);
 
         _active(loanId, _usdRecord(ISecurityRegistry.Protection.Prepayment, 8_000_000));
         assertEq(_marginCallAt(loanId), 0);
+        assertEq(_defaultBreachAt(loanId), 0);
+
+        terms = _copperTerms();
+        terms.advanceRatioBps = 7_000;
+        terms.marginCallRatioBps = 7_000;
+        terms.defaultRatioBps = 7_000;
+        _setTerms(loanId, terms);
+        assertEq(_marginCallAt(loanId), START + DAY);
+        assertEq(_defaultBreachAt(loanId), START + DAY);
+
+        _setTerms(loanId, _copperTerms());
+        assertEq(_marginCallAt(loanId), 0);
+        assertEq(_defaultBreachAt(loanId), 0);
     }
 
     function test_setTermsRejections() public {
@@ -889,9 +1020,18 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         vm.expectRevert(SecurityRegistryUpgradeable.SecurityRegistryInvalidRatio.selector);
         securityRegistry.setTerms(loanId, terms);
 
+        terms = _copperTerms();
+        terms.defaultRatioBps = 8_499;
+
+        vm.prank(securityRiskCouncil);
+        vm.expectRevert(SecurityRegistryUpgradeable.SecurityRegistryInvalidRatio.selector);
+        securityRegistry.setTerms(loanId, terms);
+
         terms.marginCallRatioBps = 8_000;
+        terms.defaultRatioBps = 8_000;
         _setTerms(loanId, terms);
         assertEq(securityRegistry.terms(loanId).marginCallRatioBps, 8_000);
+        assertEq(securityRegistry.terms(loanId).defaultRatioBps, 8_000);
 
         vm.prank(securityRiskCouncil);
         vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
@@ -1782,11 +1922,16 @@ contract SecurityRegistryTest is PipelineTestSetUp {
     }
 
     function _drawLoan(bool disburse) private returns (uint256 loanId) {
+        loanId = _drawFacility(SENIOR, 0);
+        if (disburse) _disburse(loanId, SENIOR);
+    }
+
+    function _drawFacility(uint256 senior, uint256 coLent) private returns (uint256) {
         ILoanRegistry.ImmutableLoanData memory economics = ILoanRegistry.ImmutableLoanData({
             borrowerRef: bytes32(uint256(1)),
-            originalFacilitySize: 10_000_000 * UNIT,
-            originalSeniorTranche: SENIOR,
-            originalEquityTranche: 4_000_000 * UNIT,
+            originalFacilitySize: senior + coLent,
+            originalSeniorTranche: senior,
+            originalEquityTranche: coLent,
             originalOfftakerPrice: 10_500_000 * UNIT,
             seniorInterestRate: 120_000,
             originationDate: START,
@@ -1794,12 +1939,17 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         });
 
         vm.prank(loanRegistryManager);
-        loanId = loanRegistry.drawLoan("metadataURI", economics);
+        return loanRegistry.drawLoan("metadataURI", economics);
+    }
 
-        if (disburse) {
-            vm.prank(address(minter));
-            loanRegistry.disburse(loanId, SENIOR);
-        }
+    function _coLentLoan() private returns (uint256 loanId) {
+        loanId = _drawFacility(POOL_SHARE, 1_000_000 * UNIT);
+        _setTerms(loanId, _copperTerms());
+    }
+
+    function _disburse(uint256 loanId, uint256 amount) private {
+        vm.prank(address(minter));
+        loanRegistry.disburse(loanId, amount);
     }
 
     function _loanWithTerms() private returns (uint256 loanId) {
@@ -1811,16 +1961,19 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         return ISecurityRegistry.Terms({
             advanceRatioBps: 8_000,
             marginCallRatioBps: 8_500,
+            defaultRatioBps: 9_000,
             curePeriod: 7 * DAY,
             priceStaleAfter: 2 * DAY,
             paymentTerm: ISecurityRegistry.PaymentTerm.OpenAccount,
             gracePeriod: 10 * DAY,
             defaultRate: 180_000,
+            originatorFeeRate: 10_000,
             attestationInterval: 7 * DAY,
             inspectionInterval: 30 * DAY,
             toleranceBps: 50,
             gradeToleranceBps: 100,
-            marginCallAt: 0
+            marginCallAt: 0,
+            defaultBreachAt: 0
         });
     }
 
@@ -1965,6 +2118,10 @@ contract SecurityRegistryTest is PipelineTestSetUp {
 
     function _marginCallAt(uint256 loanId) private view returns (uint64) {
         return securityRegistry.terms(loanId).marginCallAt;
+    }
+
+    function _defaultBreachAt(uint256 loanId) private view returns (uint64) {
+        return securityRegistry.terms(loanId).defaultBreachAt;
     }
 
     function _expectBurn(address holder, uint256 recordId) private {
