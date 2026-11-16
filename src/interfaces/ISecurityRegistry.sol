@@ -79,16 +79,19 @@ interface ISecurityRegistry {
     struct Terms {
         uint32 advanceRatioBps;
         uint32 marginCallRatioBps;
+        uint32 defaultRatioBps;
         uint64 curePeriod;
         uint64 priceStaleAfter;
         PaymentTerm paymentTerm;
         uint64 gracePeriod;
         uint32 defaultRate;
+        uint32 originatorFeeRate;
         uint64 attestationInterval;
         uint64 inspectionInterval;
         uint32 toleranceBps;
         uint32 gradeToleranceBps;
         uint64 marginCallAt;
+        uint64 defaultBreachAt;
     }
 
     struct LatestInspection {

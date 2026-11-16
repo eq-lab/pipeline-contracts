@@ -34,6 +34,7 @@ contract PipelineSecurityRegistryReader {
         uint32 ltvBps;
         uint64 marginCallAt;
         uint256 cureBy;
+        uint64 defaultBreachAt;
         bool priceStale;
         CountedRecord[] records;
     }
@@ -108,8 +109,7 @@ contract PipelineSecurityRegistryReader {
             mstore(counted, count)
         }
 
-        ILoanRegistry.LoanMoney memory money = ILoanRegistry(securityRegistry.loanRegistry()).loanMoney(loanId);
-        uint256 debt = money.outstanding + money.accruedInterest;
+        uint256 debt = _facilityDebt(loanId);
         uint256 value = numerator / PAR_VALUE;
         uint64 marginCallAt = loanTerms.marginCallAt;
 
@@ -121,6 +121,7 @@ contract PipelineSecurityRegistryReader {
         detail.ltvBps = _ltvBps(debt, value);
         detail.marginCallAt = marginCallAt;
         if (marginCallAt != 0) detail.cureBy = uint256(marginCallAt) + loanTerms.curePeriod;
+        detail.defaultBreachAt = loanTerms.defaultBreachAt;
         detail.records = counted;
     }
 
@@ -139,6 +140,17 @@ contract PipelineSecurityRegistryReader {
             counted = true;
         }
         return counted ? uint64(block.timestamp) - oldest : 0;
+    }
+
+    function _facilityDebt(uint256 loanId) private view returns (uint256) {
+        ILoanRegistry loanRegistry = ILoanRegistry(securityRegistry.loanRegistry());
+        ILoanRegistry.LoanMoney memory money = loanRegistry.loanMoney(loanId);
+        uint256 poolDebt = money.outstanding + money.accruedInterest;
+        if (poolDebt == 0) return 0;
+
+        ILoanRegistry.ImmutableLoanData memory economics = loanRegistry.immutableLoanData(loanId);
+        if (economics.originalSeniorTranche == 0) return poolDebt;
+        return Math.ceilDiv(poolDebt * economics.originalFacilitySize, economics.originalSeniorTranche);
     }
 
     function _recordTerm(ISecurityRegistry.Record memory recordData, uint256 countedQuantity, uint64 priceStaleAfter)

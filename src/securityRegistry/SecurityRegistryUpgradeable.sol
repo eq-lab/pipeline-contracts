@@ -44,6 +44,9 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
     event MarginCall(uint256 indexed loanId, uint32 ltvBps, uint32 marginCallRatioBps, uint256 cureBy);
     event PriceStale(uint256 indexed loanId, uint32 ltvBps, uint32 marginCallRatioBps);
     event MarginCallCured(uint256 indexed loanId, uint32 ltvBps);
+    event DefaultBreach(uint256 indexed loanId, uint32 ltvBps, uint32 defaultRatioBps);
+    event DefaultBreachPriceStale(uint256 indexed loanId, uint32 ltvBps, uint32 defaultRatioBps);
+    event DefaultBreachCleared(uint256 indexed loanId, uint32 ltvBps);
     event FlagResolved(
         uint256 indexed loanId, uint256 indexed recordId, uint256 inspectionId, FlagOutcome outcome, bytes32 reasonHash
     );
@@ -300,12 +303,17 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
     function setTerms(uint256 loanId, Terms calldata newTerms) external restricted whenNotPaused {
         SecurityRegistryStorage storage $ = _getSecurityRegistryStorage();
         _loanStatus($, loanId);
-        if (newTerms.marginCallRatioBps < newTerms.advanceRatioBps) revert SecurityRegistryInvalidRatio();
+        if (
+            newTerms.marginCallRatioBps < newTerms.advanceRatioBps
+                || newTerms.defaultRatioBps < newTerms.marginCallRatioBps
+        ) revert SecurityRegistryInvalidRatio();
 
         Terms storage loanTerms = $.terms[loanId];
         uint64 marginCallAt = loanTerms.marginCallAt;
+        uint64 defaultBreachAt = loanTerms.defaultBreachAt;
         $.terms[loanId] = newTerms;
         loanTerms.marginCallAt = marginCallAt;
+        loanTerms.defaultBreachAt = defaultBreachAt;
         $.hasTerms[loanId] = true;
 
         emit TermsSet(loanId, loanTerms);
@@ -421,6 +429,11 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
         (uint256 value, bool priceStale) = _valuation($, loanId, 0, loanTerms.priceStaleAfter);
         uint32 ltvBps = _ltvBps(_loanDebt($, loanId), value);
 
+        _openOrCureMarginCall(loanId, loanTerms, ltvBps, priceStale);
+        _signalOrClearDefaultBreach(loanId, loanTerms, ltvBps, priceStale);
+    }
+
+    function _openOrCureMarginCall(uint256 loanId, Terms storage loanTerms, uint32 ltvBps, bool priceStale) private {
         if (loanTerms.marginCallAt == 0) {
             uint32 marginCallRatioBps = loanTerms.marginCallRatioBps;
             if (ltvBps <= marginCallRatioBps) return;
@@ -433,6 +446,25 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
         } else if (ltvBps <= loanTerms.advanceRatioBps) {
             loanTerms.marginCallAt = 0;
             emit MarginCallCured(loanId, ltvBps);
+        }
+    }
+
+    function _signalOrClearDefaultBreach(uint256 loanId, Terms storage loanTerms, uint32 ltvBps, bool priceStale)
+        private
+    {
+        uint32 defaultRatioBps = loanTerms.defaultRatioBps;
+        if (loanTerms.defaultBreachAt == 0) {
+            if (ltvBps <= defaultRatioBps) return;
+            if (priceStale) {
+                emit DefaultBreachPriceStale(loanId, ltvBps, defaultRatioBps);
+                return;
+            }
+
+            loanTerms.defaultBreachAt = uint64(block.timestamp);
+            emit DefaultBreach(loanId, ltvBps, defaultRatioBps);
+        } else if (ltvBps <= defaultRatioBps) {
+            loanTerms.defaultBreachAt = 0;
+            emit DefaultBreachCleared(loanId, ltvBps);
         }
     }
 
@@ -578,7 +610,7 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
 
         uint32 advanceRatioBps = _loanTerms($, loanId).advanceRatioBps;
         (uint256 value,) = _valuation($, loanId, recordData.recordId, 0);
-        if (_ltvBps(money.outstanding + money.accruedInterest, value) > advanceRatioBps) {
+        if (_ltvBps(_facilityDebt($, loanId, money), value) > advanceRatioBps) {
             revert SecurityRegistryLtvTooHigh();
         }
     }
@@ -614,8 +646,20 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
     }
 
     function _loanDebt(SecurityRegistryStorage storage $, uint256 loanId) private view returns (uint256) {
-        ILoanRegistry.LoanMoney memory money = _loanMoney($, loanId);
-        return money.outstanding + money.accruedInterest;
+        return _facilityDebt($, loanId, _loanMoney($, loanId));
+    }
+
+    function _facilityDebt(SecurityRegistryStorage storage $, uint256 loanId, ILoanRegistry.LoanMoney memory money)
+        private
+        view
+        returns (uint256)
+    {
+        uint256 poolDebt = money.outstanding + money.accruedInterest;
+        if (poolDebt == 0) return 0;
+
+        ILoanRegistry.ImmutableLoanData memory economics = $.loanRegistry.immutableLoanData(loanId);
+        if (economics.originalSeniorTranche == 0) return poolDebt;
+        return Math.ceilDiv(poolDebt * economics.originalFacilitySize, economics.originalSeniorTranche);
     }
 
     function _loanTerms(SecurityRegistryStorage storage $, uint256 loanId) private view returns (Terms storage) {
