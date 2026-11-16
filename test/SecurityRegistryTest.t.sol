@@ -851,6 +851,7 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         _revalue(blId, 6_500);
         assertEq(_defaultBreachAt(loanId), day10);
         assertEq(_marginCallAt(loanId), START);
+        assertEq(securityRegistryReader.coverageDetail(loanId).defaultBreachAt, day10);
 
         vm.warp(day10 + DAY);
         vm.recordLogs();
@@ -1671,6 +1672,7 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         assertEq(detail.ltvBps, 6_667);
         assertEq(detail.marginCallAt, 0);
         assertEq(detail.cureBy, 0);
+        assertEq(detail.defaultBreachAt, 0);
         assertFalse(detail.priceStale);
         assertEq(detail.coverageBps, securityRegistry.coverage(loanId));
 
@@ -1703,6 +1705,7 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         PipelineSecurityRegistryReader.CoverageDetail memory detail = securityRegistryReader.coverageDetail(loanId);
         assertEq(detail.marginCallAt, START);
         assertEq(detail.cureBy, START + 7 * DAY);
+        assertEq(detail.defaultBreachAt, START);
         assertEq(detail.ltvBps, type(uint32).max);
         assertEq(detail.value, 0);
         assertEq(detail.records.length, 0);
@@ -1721,6 +1724,7 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         assertFalse(detail.priceStale);
         assertEq(detail.marginCallAt, 0);
         assertEq(detail.cureBy, 0);
+        assertEq(detail.defaultBreachAt, 0);
 
         vm.warp(START + 2 * DAY);
         assertFalse(securityRegistryReader.coverageDetail(loanId).priceStale);

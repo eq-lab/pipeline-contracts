@@ -34,6 +34,7 @@ contract PipelineSecurityRegistryReader {
         uint32 ltvBps;
         uint64 marginCallAt;
         uint256 cureBy;
+        uint64 defaultBreachAt;
         bool priceStale;
         CountedRecord[] records;
     }
@@ -120,6 +121,7 @@ contract PipelineSecurityRegistryReader {
         detail.ltvBps = _ltvBps(debt, value);
         detail.marginCallAt = marginCallAt;
         if (marginCallAt != 0) detail.cureBy = uint256(marginCallAt) + loanTerms.curePeriod;
+        detail.defaultBreachAt = loanTerms.defaultBreachAt;
         detail.records = counted;
     }
 
