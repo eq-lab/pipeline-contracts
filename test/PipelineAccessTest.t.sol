@@ -431,7 +431,7 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.expectRevert(unauthorized);
         securityRegistry.releaseWithConsent(0, bytes32(0));
         vm.expectRevert(unauthorized);
-        securityRegistry.resolveFlag(0, ISecurityRegistry.FlagOutcome.Accepted, bytes32(0));
+        securityRegistry.resolveFlag(0, 0, ISecurityRegistry.FlagOutcome.Accepted, bytes32(0));
         vm.expectRevert(unauthorized);
         securityRecordNft.setInspectors(new address[](0));
         vm.stopPrank();
