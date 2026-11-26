@@ -30,9 +30,8 @@ contract SetupProtocolRoles is Script, Deployments {
         registrySelectors[2] = PipelineLoanRegistry.recordPayment.selector;
         registrySelectors[3] = PipelineLoanRegistry.unrecordPayment.selector;
 
-        bytes4[] memory vaultMinterSelectors = new bytes4[](2);
+        bytes4[] memory vaultMinterSelectors = new bytes4[](1);
         vaultMinterSelectors[0] = StakedPipelineUSD.pull.selector;
-        vaultMinterSelectors[1] = StakedPipelineUSD.burnShares.selector;
 
         bytes4[] memory pocketMinterSelectors = new bytes4[](2);
         pocketMinterSelectors[0] = PipelinePocket.release.selector;

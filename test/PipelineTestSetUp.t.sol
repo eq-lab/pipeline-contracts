@@ -516,13 +516,13 @@ contract PipelineTestSetUp is Test {
         vm.prank(admin);
         authority.setTargetFunctionRole(address(loanRegistry), selectors, roleId);
 
-        selectors = new bytes4[](2);
+        selectors = new bytes4[](1);
         selectors[0] = StakedPipelineUSD.pull.selector;
-        selectors[1] = StakedPipelineUSD.burnShares.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(sPlUsd), selectors, roleId);
 
+        selectors = new bytes4[](2);
         selectors[0] = PipelinePocket.release.selector;
         selectors[1] = PipelinePocket.unrelease.selector;
 

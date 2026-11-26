@@ -260,10 +260,6 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         sPlUsd.pull(0);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        sPlUsd.burnShares(caller, 0);
     }
 
     function testFuzz_stakedPlUsdAdminAccess(address caller) public {
