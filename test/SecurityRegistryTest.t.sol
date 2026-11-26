@@ -1303,6 +1303,8 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         emit PipelineSecurityRecordNft.InspectionApproved(
             loanId, warehouse, count, securityInspectionSecondOperator, -284, 0, 0, true
         );
+        vm.expectEmit(address(securityRecordNft));
+        emit PipelineSecurityRecordNft.RecordFlagged(loanId, warehouse, count);
 
         _approve(count);
         assertEq(securityRegistry.record(warehouse).flaggedBy, count);
@@ -1413,25 +1415,6 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         assertEq(securityRegistry.collateralValue(loanId), 20_500_000 * UNIT);
     }
 
-    function test_anInspectionApprovedAfterAHandoverFlagsTheReleasedRecord() public {
-        uint256 loanId = _loanWithTerms();
-        uint256 blId = _active(loanId, _bl(10_000));
-        _revalue(blId, 10_000);
-        uint256 lotId = securityRegistry.record(blId).lotId;
-        uint256 survey = _enter(blId, _certificate(ISecurityRecordNft.InspectionKind.DischargeSurvey, 9_000));
-
-        uint256 warehouse = _register(loanId, lotId, _goodsRecord(ISecurityRegistry.Protection.WarehousePledge, 10_000));
-        _handover(blId, warehouse);
-        _approve(survey);
-
-        assertEq(securityRegistry.record(blId).flaggedBy, survey);
-        assertEq(securityRegistry.record(warehouse).flaggedBy, 0);
-
-        PipelineSecurityRegistryReader.CoverageDetail memory detail = securityRegistryReader.coverageDetail(loanId);
-        assertEq(detail.value, 9_000_000 * UNIT);
-        assertEq(detail.flaggedValue, 0);
-    }
-
     function test_aShortfallCanOpenAMarginCallAndBlockARelease() public {
         uint256 loanId = _loanWithTerms();
         uint256 warehouse = _active(loanId, _goodsRecord(ISecurityRegistry.Protection.WarehousePledge, 10_000));
@@ -1457,6 +1440,209 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         assertEq(securityRegistry.record(warehouse).flaggedBy, count);
     }
 
+    function test_aCountApprovedAfterAHandoverFlagsTheNewPaper() public {
+        uint256 loanId = _loanWithTerms();
+        (uint256 blId, uint256 warehouse) = _lotBeforeHandover(loanId);
+        uint256 count = _enter(blId, _certificate(ISecurityRecordNft.InspectionKind.StockCount, 6_000));
+        _handover(blId, warehouse);
+
+        vm.expectEmit(address(securityRecordNft));
+        emit PipelineSecurityRecordNft.InspectionApproved(
+            loanId, blId, count, securityInspectionSecondOperator, -4_000, 0, 0, true
+        );
+
+        assertEq(_approveFlagging(count), _ids(warehouse));
+        assertEq(securityRegistry.record(blId).flaggedBy, 0);
+        assertEq(securityRegistry.record(warehouse).flaggedBy, count);
+
+        PipelineSecurityRegistryReader.CoverageDetail memory detail = securityRegistryReader.coverageDetail(loanId);
+        assertEq(detail.value, 6_000_000 * UNIT);
+        assertEq(detail.flaggedValue, 6_000_000 * UNIT);
+        assertEq(_marginCallAt(loanId), START);
+
+        uint256 next = _register(
+            loanId,
+            securityRegistry.record(warehouse).lotId,
+            _goodsRecord(ISecurityRegistry.Protection.CollateralManagement, 10_000)
+        );
+        _expectHandoverRevert(warehouse, next, SecurityRegistryUpgradeable.SecurityRegistryFlagged.selector);
+        _expectResolveFlagRevert(
+            blId,
+            ISecurityRegistry.FlagOutcome.Accepted,
+            SecurityRegistryUpgradeable.SecurityRegistryWrongRecordStatus.selector
+        );
+
+        _resolveFlag(warehouse, ISecurityRegistry.FlagOutcome.Accepted);
+        assertEq(securityRegistry.record(warehouse).referenceQuantity, 600 * UNIT);
+        _handover(warehouse, next);
+    }
+
+    function test_aCountForAPendingPaperFlagsTheCountedOneToo() public {
+        uint256 loanId = _loanWithTerms();
+        (uint256 blId, uint256 warehouse) = _lotBeforeHandover(loanId);
+
+        uint256 survey = _enter(warehouse, _certificate(ISecurityRecordNft.InspectionKind.DischargeSurvey, 6_000));
+        assertEq(_approveFlagging(survey), _ids(warehouse, blId));
+        assertEq(securityRegistry.record(warehouse).flaggedBy, survey);
+        assertEq(securityRegistry.record(blId).flaggedBy, survey);
+        assertEq(securityRegistryReader.coverageDetail(loanId).flaggedValue, 6_000_000 * UNIT);
+
+        _release(warehouse);
+        assertEq(securityRegistry.record(blId).flaggedBy, survey);
+        assertEq(securityRegistryReader.coverageDetail(loanId).flaggedValue, 6_000_000 * UNIT);
+    }
+
+    function test_theCountedPaperIsMeasuredAgainstItsOwnReference() public {
+        uint256 loanId = _loanWithTerms();
+        uint256 blId = _active(loanId, _bl(10_000));
+        _revalue(blId, 10_000);
+        uint256 lotId = securityRegistry.record(blId).lotId;
+        uint256 receipt = _register(loanId, lotId, _goodsRecord(ISecurityRegistry.Protection.WarehousePledge, 6_000));
+        uint256 survey = _enter(receipt, _certificate(ISecurityRecordNft.InspectionKind.DischargeSurvey, 6_000));
+
+        vm.expectEmit(address(securityRecordNft));
+        emit PipelineSecurityRecordNft.InspectionApproved(
+            loanId, receipt, survey, securityInspectionSecondOperator, 0, 0, 0, false
+        );
+
+        assertEq(_approveFlagging(survey), _ids(blId));
+        assertEq(securityRegistry.record(receipt).flaggedBy, 0);
+        assertEq(securityRegistry.record(blId).flaggedBy, survey);
+
+        uint256 otherBl = _active(loanId, _bl(10_000));
+        uint256 overstated = _register(
+            loanId,
+            securityRegistry.record(otherBl).lotId,
+            _goodsRecord(ISecurityRegistry.Protection.WarehousePledge, 12_000)
+        );
+        uint256 count = _inspect(overstated, _certificate(ISecurityRecordNft.InspectionKind.StockCount, 10_000));
+        assertEq(securityRegistry.record(overstated).flaggedBy, count);
+        assertEq(securityRegistry.record(otherBl).flaggedBy, 0);
+    }
+
+    function test_aCountNeverFlagsACountedReceivable() public {
+        uint256 loanId = _loanWithTerms();
+        uint256 warehouse = _active(loanId, _goodsRecord(ISecurityRegistry.Protection.WarehousePledge, 10_000));
+        _revalue(warehouse, 10_000);
+        uint256 receivable = _register(
+            loanId,
+            securityRegistry.record(warehouse).lotId,
+            _usdRecord(ISecurityRegistry.Protection.AssignedReceivable, 10_500_000)
+        );
+
+        uint256 count = _enter(warehouse, _certificate(ISecurityRecordNft.InspectionKind.StockCount, 6_000));
+        _handover(warehouse, receivable);
+        assertEq(_approveFlagging(count).length, 0);
+
+        ISecurityRegistry.Record memory recordData = securityRegistry.record(receivable);
+        assertEq(recordData.flaggedBy, 0);
+        assertEq(recordData.referenceQuantity, 10_500_000 * UNIT);
+        assertEq(securityRegistry.record(warehouse).flaggedBy, 0);
+        assertEq(securityRegistry.collateralValue(loanId), 10_500_000 * UNIT);
+    }
+
+    function test_onlyTheLotsLatestCountFlagsTheCountedPaper() public {
+        uint256 loanId = _loanWithTerms();
+        (uint256 blId, uint256 warehouse) = _lotBeforeHandover(loanId);
+
+        vm.warp(START + DAY);
+        _inspect(blId, _certificate(ISecurityRecordNft.InspectionKind.StockCount, 10_000));
+        ISecurityRecordNft.NewInspection memory older =
+            _certificate(ISecurityRecordNft.InspectionKind.StockCount, 6_000);
+        older.inspectedAt = START;
+        uint256 olderId = _inspect(warehouse, older);
+        assertEq(securityRegistry.record(warehouse).flaggedBy, olderId);
+        assertEq(securityRegistry.record(blId).flaggedBy, 0);
+        assertEq(securityRegistry.collateralValue(loanId), 10_000_000 * UNIT);
+
+        uint256 assay = _inspect(warehouse, _assay(98_000_000));
+        assertEq(securityRegistry.record(warehouse).flaggedBy, assay);
+        assertEq(securityRegistry.record(blId).flaggedBy, 0);
+    }
+
+    function test_anAssayOfAPaperClosedSinceEntryFlagsTheCountedOne() public {
+        uint256 loanId = _loanWithTerms();
+        (uint256 blId, uint256 warehouse) = _lotBeforeHandover(loanId);
+
+        uint256 assay = _enter(blId, _assay(98_000_000));
+        assertEq(_approveAfterHandover(blId, warehouse, assay), _ids(warehouse));
+        assertEq(securityRegistry.record(warehouse).flaggedBy, assay);
+        assertEq(securityRegistry.record(blId).flaggedBy, 0);
+
+        uint256 next = _register(
+            loanId,
+            securityRegistry.record(warehouse).lotId,
+            _goodsRecord(ISecurityRegistry.Protection.CollateralManagement, 10_000)
+        );
+        _expectHandoverRevert(warehouse, next, SecurityRegistryUpgradeable.SecurityRegistryFlagged.selector);
+    }
+
+    function test_anOffGradeCountOfAPaperClosedSinceEntryFlagsTheCountedOne() public {
+        uint256 loanId = _loanWithTerms();
+        (uint256 blId, uint256 warehouse) = _lotBeforeHandover(loanId);
+
+        ISecurityRecordNft.NewInspection memory offGrade =
+            _certificate(ISecurityRecordNft.InspectionKind.StockCount, 10_000);
+        offGrade.grade = 98_000_000;
+        uint256 count = _enter(blId, offGrade);
+        assertEq(_approveAfterHandover(blId, warehouse, count), _ids(warehouse));
+        assertEq(securityRegistry.record(warehouse).flaggedBy, count);
+    }
+
+    function test_anOlderCountOfAPaperClosedSinceEntryFlagsTheCountedOne() public {
+        uint256 loanId = _loanWithTerms();
+        (uint256 blId, uint256 warehouse) = _lotBeforeHandover(loanId);
+
+        vm.warp(START + DAY);
+        _inspect(blId, _certificate(ISecurityRecordNft.InspectionKind.StockCount, 10_000));
+        ISecurityRecordNft.NewInspection memory older =
+            _certificate(ISecurityRecordNft.InspectionKind.StockCount, 6_000);
+        older.inspectedAt = START;
+        uint256 olderId = _enter(blId, older);
+        assertEq(_approveAfterHandover(blId, warehouse, olderId), _ids(warehouse));
+
+        PipelineSecurityRegistryReader.CoverageDetail memory detail = securityRegistryReader.coverageDetail(loanId);
+        assertEq(detail.value, 10_000_000 * UNIT);
+        assertEq(detail.flaggedValue, 10_000_000 * UNIT);
+    }
+
+    function test_aCleanInspectionOfAPaperClosedSinceEntryFlagsNothing() public {
+        uint256 loanId = _loanWithTerms();
+        (uint256 blId, uint256 warehouse) = _lotBeforeHandover(loanId);
+
+        ISecurityRecordNft.NewInspection memory clean =
+            _certificate(ISecurityRecordNft.InspectionKind.StockCount, 10_000);
+        clean.grade = 99_900_000;
+        uint256 cleanId = _enter(blId, clean);
+        assertEq(_approveAfterHandover(blId, warehouse, cleanId).length, 0);
+        assertEq(securityRegistry.record(warehouse).flaggedBy, 0);
+    }
+
+    function test_anUngradedCountedPaperTakesNoFlagFromAnAssay() public {
+        uint256 loanId = _loanWithTerms();
+        uint256 blId = _active(loanId, _bl(10_000));
+        ISecurityRegistry.NewRecord memory noGrade = _goodsRecord(ISecurityRegistry.Protection.WarehousePledge, 10_000);
+        noGrade.referenceGrade = 0;
+        uint256 ungraded = _register(loanId, securityRegistry.record(blId).lotId, noGrade);
+
+        uint256 assay = _enter(blId, _assay(98_000_000));
+        assertEq(_approveAfterHandover(blId, ungraded, assay).length, 0);
+        assertEq(securityRegistry.record(ungraded).flaggedBy, 0);
+    }
+
+    function test_aLaterBreachOnAnotherPaperTakesTheFlagOver() public {
+        uint256 loanId = _loanWithTerms();
+        (uint256 blId, uint256 warehouse) = _lotBeforeHandover(loanId);
+        uint256 first = _inspect(blId, _certificate(ISecurityRecordNft.InspectionKind.StockCount, 6_000));
+        _resolveFlag(blId, ISecurityRegistry.FlagOutcome.Escalated);
+        assertEq(securityRegistry.record(blId).flaggedBy, first);
+
+        uint256 survey = _inspect(warehouse, _certificate(ISecurityRecordNft.InspectionKind.DischargeSurvey, 10_000));
+        assertEq(securityRecordNft.inspection(survey).variancePreviousBps, 6_667);
+        assertEq(securityRegistry.record(blId).flaggedBy, survey);
+        assertEq(securityRegistry.record(warehouse).flaggedBy, survey);
+    }
+
     function test_acceptingAFlagUpdatesTheReference() public {
         uint256 loanId = _loanWithTerms();
         (uint256 recordId, uint256 inspectionId) = _flaggedRecord(loanId, 9_000);
@@ -1479,9 +1665,11 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         assertEq(securityRecordNft.inspection(next).varianceReferenceBps, 0);
         assertEq(securityRegistry.record(recordId).flaggedBy, 0);
 
-        vm.prank(securityRiskCouncil);
-        vm.expectRevert(SecurityRegistryUpgradeable.SecurityRegistryNotFlagged.selector);
-        securityRegistry.resolveFlag(recordId, ISecurityRegistry.FlagOutcome.Accepted, _h(19));
+        _expectResolveFlagRevert(
+            recordId,
+            ISecurityRegistry.FlagOutcome.Accepted,
+            SecurityRegistryUpgradeable.SecurityRegistryNotFlagged.selector
+        );
     }
 
     function test_acceptingAnAssayUpdatesTheGradeOnly() public {
@@ -1501,9 +1689,11 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         uint256 loanId = _loanWithTerms();
         (uint256 recordId,) = _flaggedRecord(loanId, 0);
 
-        vm.prank(securityRiskCouncil);
-        vm.expectRevert(SecurityRegistryUpgradeable.SecurityRegistryInvalidQuantity.selector);
-        securityRegistry.resolveFlag(recordId, ISecurityRegistry.FlagOutcome.Accepted, _h(19));
+        _expectResolveFlagRevert(
+            recordId,
+            ISecurityRegistry.FlagOutcome.Accepted,
+            SecurityRegistryUpgradeable.SecurityRegistryInvalidQuantity.selector
+        );
 
         _resolveFlag(recordId, ISecurityRegistry.FlagOutcome.Escalated);
         assertNotEq(securityRegistry.record(recordId).flaggedBy, 0);
@@ -1576,6 +1766,31 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         ISecurityRegistry.Record memory recordData = securityRegistry.record(recordId);
         assertEq(recordData.flaggedBy, inspectionId);
         assertEq(recordData.referenceQuantity, 1_000 * UNIT);
+    }
+
+    function test_aFlagCanBeResolvedUntilTheRecordCloses() public {
+        uint256 loanId = _loanWithTerms();
+        (uint256 released,) = _flaggedRecord(loanId, 9_000);
+        _releaseWithConsent(released);
+
+        uint256 enforced = _active(loanId, _bl(10_000));
+        uint256 count = _enter(enforced, _certificate(ISecurityRecordNft.InspectionKind.StockCount, 9_000));
+        _setDefault(loanId);
+        _startEnforcement(enforced);
+        _approve(count);
+        assertEq(securityRegistry.record(enforced).flaggedBy, count);
+        _resolveFlag(enforced, ISecurityRegistry.FlagOutcome.Escalated);
+        _markEnforced(enforced);
+
+        uint256[2] memory recordIds = [released, enforced];
+        for (uint256 i; i < recordIds.length; ++i) {
+            assertNotEq(securityRegistry.record(recordIds[i]).flaggedBy, 0);
+            _expectResolveFlagRevert(
+                recordIds[i],
+                ISecurityRegistry.FlagOutcome.Accepted,
+                SecurityRegistryUpgradeable.SecurityRegistryWrongRecordStatus.selector
+            );
+        }
     }
 
     function test_resolveFlagNeedsAnExistingRecord() public {
@@ -1850,7 +2065,7 @@ contract SecurityRegistryTest is PipelineTestSetUp {
 
         vm.prank(caller);
         vm.expectRevert(SecurityRegistryUpgradeable.SecurityRegistryOnlyRecordNft.selector);
-        securityRegistry.applyInspection(recordId, 1, uint64(START), 1, true, true);
+        securityRegistry.applyInspection(recordId, 1, uint64(START), 1, true, true, recordId);
 
         assertEq(securityRegistry.record(recordId).flaggedBy, 0);
         assertEq(securityRegistry.latestInspection(securityRegistry.record(recordId).lotId).inspectionId, 0);
@@ -2216,6 +2431,63 @@ contract SecurityRegistryTest is PipelineTestSetUp {
     function _resolveFlag(uint256 recordId, ISecurityRegistry.FlagOutcome outcome) private {
         vm.prank(securityRiskCouncil);
         securityRegistry.resolveFlag(recordId, outcome, _h(19));
+    }
+
+    function _expectResolveFlagRevert(uint256 recordId, ISecurityRegistry.FlagOutcome outcome, bytes4 selector)
+        private
+    {
+        vm.prank(securityRiskCouncil);
+        vm.expectRevert(selector);
+        securityRegistry.resolveFlag(recordId, outcome, _h(19));
+    }
+
+    function _lotBeforeHandover(uint256 loanId) private returns (uint256 blId, uint256 warehouse) {
+        blId = _active(loanId, _bl(10_000));
+        _revalue(blId, 10_000);
+        warehouse = _register(
+            loanId,
+            securityRegistry.record(blId).lotId,
+            _goodsRecord(ISecurityRegistry.Protection.WarehousePledge, 10_000)
+        );
+    }
+
+    function _approveAfterHandover(uint256 blId, uint256 warehouse, uint256 inspectionId)
+        private
+        returns (uint256[] memory)
+    {
+        _handover(blId, warehouse);
+        return _approveFlagging(inspectionId);
+    }
+
+    function _approveFlagging(uint256 inspectionId) private returns (uint256[] memory flagged) {
+        vm.recordLogs();
+        _approve(inspectionId);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        flagged = new uint256[](logs.length);
+        uint256 count;
+        for (uint256 i; i < logs.length; ++i) {
+            if (
+                logs[i].emitter != address(securityRecordNft)
+                    || logs[i].topics[0] != PipelineSecurityRecordNft.RecordFlagged.selector
+            ) continue;
+            assertEq(abi.decode(logs[i].data, (uint256)), inspectionId);
+            flagged[count++] = uint256(logs[i].topics[2]);
+        }
+        assembly ("memory-safe") {
+            mstore(flagged, count)
+        }
+    }
+
+    function _ids(uint256 first) private pure returns (uint256[] memory ids) {
+        ids = new uint256[](1);
+        ids[0] = first;
+    }
+
+    function _ids(uint256 first, uint256 second) private pure returns (uint256[] memory ids) {
+        ids = new uint256[](2);
+        ids[0] = first;
+        ids[1] = second;
     }
 
     function _attestAll(uint256[3] memory recordIds) private {

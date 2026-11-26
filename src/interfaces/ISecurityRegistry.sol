@@ -109,8 +109,7 @@ interface ISecurityRegistry {
         uint256 referenceGrade;
         uint32 toleranceBps;
         uint32 gradeToleranceBps;
-        bool hasLatest;
-        uint256 latestQuantity;
+        uint256 countedRecordId;
     }
 
     function applyInspection(
@@ -118,8 +117,9 @@ interface ISecurityRegistry {
         uint256 inspectionId,
         uint64 inspectedAt,
         uint256 quantity,
-        bool measuresQuantity,
-        bool flagged
+        bool becameLatest,
+        bool flagged,
+        uint256 countedRecordId
     ) external;
     function checkCoverage(uint256 loanId) external;
 
