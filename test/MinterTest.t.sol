@@ -132,22 +132,87 @@ contract MinterTest is PipelineTestSetUp {
         minter.recordWireIn(address(minter), 500, 0, _h(1));
     }
 
-    function test_mintingCallsRefuseZeroRef() public {
+    function test_everyBookingRefusesZeroRef() public {
         uint256 loanId = _loanReadyToRepay();
         ILoanRegistry.RepaymentData memory repaymentData = _repaymentData();
+        uint256 repaymentId = _repay(loanId, 3);
+        uint256 escrowId = _escrow(500, 4);
+        address lp = _holderOutsideVault(300, 5);
+        vm.startPrank(lp);
+        plUsd.approve(address(minter), 300);
+        uint256 wireOutId = minter.requestWireOut(300);
+        vm.stopPrank();
+        vm.prank(minterOps);
+        uint256 rampId = minter.openRamp(MinterUpgradeable.RampDirection.BankToUsdc, 100, _h(6));
+
+        bytes4 missing = MinterUpgradeable.MinterMissingRef.selector;
 
         vm.startPrank(mintCaller);
-
-        vm.expectRevert(MinterUpgradeable.MinterMissingRef.selector);
+        vm.expectRevert(missing);
         minter.recordWireIn(address(minter), 10, 0, bytes32(0));
-
-        vm.expectRevert(MinterUpgradeable.MinterMissingRef.selector);
+        vm.expectRevert(missing);
         minter.repay(loanId, repaymentData, 0, bytes32(0), 0);
-
-        vm.expectRevert(MinterUpgradeable.MinterMissingRef.selector);
+        vm.expectRevert(missing);
         minter.recordIncome(10, 0, bytes32(0));
-
         vm.stopPrank();
+
+        vm.startPrank(minterOps);
+        vm.expectRevert(missing);
+        minter.returnWireIn(escrowId, bytes32(0));
+        vm.expectRevert(missing);
+        minter.disburse(loanId, 10, 0, bytes32(0));
+        vm.expectRevert(missing);
+        minter.reverseDisburse(loanId, SENIOR_TRANCHE, bytes32(0), 0);
+        vm.expectRevert(missing);
+        minter.reverseRepay(loanId, repaymentId, bytes32(0));
+        vm.expectRevert(missing);
+        minter.settleWireOut(wireOutId, 300, 0, bytes32(0));
+        vm.expectRevert(missing);
+        minter.openRamp(MinterUpgradeable.RampDirection.BankToUsdc, 1, bytes32(0));
+        vm.expectRevert(missing);
+        minter.closeRamp(rampId, 100, bytes32(0));
+        vm.expectRevert(missing);
+        minter.recordExpense(1, 0, bytes32(0));
+        vm.expectRevert(missing);
+        minter.recordCorrection(1, bytes32(0), 0);
+        vm.expectRevert(missing);
+        minter.correctVaultMint(1, bytes32(0));
+        vm.expectRevert(missing);
+        minter.cancelYield(1, 0, bytes32(0));
+        vm.stopPrank();
+    }
+
+    function test_aRetriedBookingLandsOncePerRefHash() public {
+        _escrow(5, 1);
+        bytes4 seen = MinterUpgradeable.MinterRefHashSeen.selector;
+
+        vm.prank(minterOps);
+        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterInsufficientBankCash.selector, 10, 5));
+        minter.recordExpense(10, 0, _h(7));
+        assertFalse(minterReader.refHashSeen(_h(7)));
+
+        _escrow(100, 2);
+        vm.prank(minterOps);
+        minter.recordExpense(10, 0, _h(7));
+        vm.prank(minterOps);
+        vm.expectRevert(seen);
+        minter.recordExpense(10, 0, _h(7));
+        assertEq(minterReader.bankCash(), 95);
+
+        uint256 loanId = _drawLoan();
+        _disburse(loanId, 40, 8);
+        vm.prank(minterOps);
+        vm.expectRevert(seen);
+        minter.disburse(loanId, 40, 0, _h(8));
+        assertEq(loanRegistry.outstanding(loanId), 40);
+
+        vm.prank(minterOps);
+        minter.openRamp(MinterUpgradeable.RampDirection.BankToUsdc, 50, _h(10));
+        vm.prank(minterOps);
+        vm.expectRevert(seen);
+        minter.openRamp(MinterUpgradeable.RampDirection.BankToUsdc, 50, _h(10));
+        assertEq(minterReader.bankCash(), 5);
+        assertEq(minterReader.inFlight(), 50);
     }
 
     function test_mintBudget() public {
@@ -694,12 +759,17 @@ contract MinterTest is PipelineTestSetUp {
         assertEq(minterReader.bankCash(), 115);
 
         vm.prank(minterOps);
+        vm.expectRevert(MinterUpgradeable.MinterRefHashSeen.selector);
+        minter.recordCorrection(25, _h(3), entryId);
+
+        vm.prank(minterOps);
         vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterInsufficientBankCash.selector, 116, 115));
-        minter.recordCorrection(-116, _h(3), entryId);
+        minter.recordCorrection(-116, _h(4), entryId);
 
         vm.prank(minterOps);
         vm.expectRevert(MinterUpgradeable.MinterNonExistentCashEntry.selector);
-        minter.recordCorrection(1, _h(3), 99);
+        minter.recordCorrection(1, _h(4), 99);
+        assertEq(minterReader.bankCash(), 115);
     }
 
     function test_correctVaultMint() public {
@@ -846,17 +916,6 @@ contract MinterTest is PipelineTestSetUp {
         assertEq(pocketData.held, SENIOR_TRANCHE);
         assertEq(pocketData.releasedTotal, 0);
         _assertBacked();
-    }
-
-    function test_nonMintingCallsAcceptZeroRef() public {
-        _escrow(500, 1);
-        uint256 loanId = _drawLoan();
-
-        _disburseWithRef(loanId, 100, bytes32(0));
-        _disburseWithRef(loanId, 100, bytes32(0));
-
-        assertEq(loanRegistry.outstanding(loanId), 200);
-        assertFalse(minterReader.refHashSeen(bytes32(0)));
     }
 
     function test_absorbRejectsOverreport() public {
@@ -1152,6 +1211,14 @@ contract MinterTest is PipelineTestSetUp {
         whitelistRegistry.allow(lp);
     }
 
+    function _holderOutsideVault(uint256 amount, uint256 refN) private returns (address lp) {
+        (lp,) = _wireInLp(amount, refN);
+        vm.startPrank(lp);
+        sPlUsd.redeem(sPlUsd.balanceOf(lp), lp, lp);
+        vm.stopPrank();
+        assertEq(plUsd.balanceOf(lp), amount);
+    }
+
     function _registerDeal(uint256 loanId) private {
         vm.prank(loanRegistryManager);
         dealTokenFactory.registerDeal(loanId);
@@ -1193,11 +1260,6 @@ contract MinterTest is PipelineTestSetUp {
     function _disburse(uint256 loanId, uint256 amount, uint256 refN) private returns (uint256 entryId) {
         vm.prank(minterOps);
         return minter.disburse(loanId, amount, 0, _h(refN));
-    }
-
-    function _disburseWithRef(uint256 loanId, uint256 amount, bytes32 refHash) private returns (uint256 entryId) {
-        vm.prank(minterOps);
-        return minter.disburse(loanId, amount, 0, refHash);
     }
 
     function _repaymentData() private pure returns (ILoanRegistry.RepaymentData memory) {
