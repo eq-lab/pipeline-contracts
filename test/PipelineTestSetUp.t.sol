@@ -462,7 +462,7 @@ contract PipelineTestSetUp is Test {
 
         bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = WithdrawalQueueUpgradeable.setAssetHolder.selector;
-        selectors[1] = WithdrawalQueueShutdownUpgradeable.setShutdownRate.selector;
+        selectors[1] = WithdrawalQueueShutdownUpgradeable.setRate.selector;
         selectors[2] = WithdrawalQueueShutdownUpgradeable.setVerifier.selector;
         selectors[3] = WithdrawalQueueShutdownUpgradeable.pause.selector;
         selectors[4] = WithdrawalQueueShutdownUpgradeable.unpause.selector;

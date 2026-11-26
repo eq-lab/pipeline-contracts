@@ -31,6 +31,7 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         assertEq(withdrawalQueue.assetHolder(), tokenHolder);
         assertEq(withdrawalQueue.authority(), address(authority));
         assertEq(withdrawalQueue.verifier(), withdrawalVerifier);
+        assertEq(withdrawalQueue.rate(), withdrawalQueue.RATE_ONE());
 
         uint256 conversionAmount = 1e18;
         assertEq(withdrawalQueue.convertToShares(conversionAmount), conversionAmount);
@@ -125,15 +126,87 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         assertEq(withdrawalQueue.assetHolder(), newAssetHolder);
     }
 
-    function testFuzz_setShutdown(uint256 shutdownRate, uint256 convertAmount) public {
+    function testFuzz_setRate(uint256 newRate, uint256 convertAmount) public {
         uint256 one = withdrawalQueue.RATE_ONE();
-        vm.assume(convertAmount < type(uint128).max && shutdownRate < one && shutdownRate != 0);
+        vm.assume(convertAmount < type(uint128).max && newRate <= one && newRate != 0);
+
+        vm.expectEmit(address(withdrawalQueue));
+        emit WithdrawalQueueShutdownUpgradeable.RateSet(newRate);
 
         vm.prank(queueManager);
-        withdrawalQueue.setShutdownRate(shutdownRate);
+        withdrawalQueue.setRate(newRate);
 
-        assertEq(withdrawalQueue.convertToAssets(convertAmount), Math.mulDiv(convertAmount, shutdownRate, one));
-        assertEq(withdrawalQueue.convertToShares(convertAmount), Math.mulDiv(convertAmount, one, shutdownRate));
+        assertEq(withdrawalQueue.rate(), newRate);
+        assertEq(withdrawalQueue.convertToAssets(convertAmount), Math.mulDiv(convertAmount, newRate, one));
+        assertEq(withdrawalQueue.convertToShares(convertAmount), Math.mulDiv(convertAmount, one, newRate));
+    }
+
+    function test_setRate_canBeCalledRepeatedly() public {
+        uint256 one = withdrawalQueue.RATE_ONE();
+        uint256[5] memory rates = [one / 4, one / 8, one / 2, one, one / 3];
+
+        for (uint256 i; i < rates.length; ++i) {
+            vm.expectEmit(address(withdrawalQueue));
+            emit WithdrawalQueueShutdownUpgradeable.RateSet(rates[i]);
+
+            vm.prank(queueManager);
+            withdrawalQueue.setRate(rates[i]);
+
+            assertEq(withdrawalQueue.rate(), rates[i]);
+        }
+
+        vm.prank(queueManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(WithdrawalQueueShutdownUpgradeable.WithdrawalQueueShutdownInvalidRate.selector)
+        );
+        withdrawalQueue.setRate(one + 1);
+
+        vm.prank(queueManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(WithdrawalQueueShutdownUpgradeable.WithdrawalQueueShutdownInvalidRate.selector)
+        );
+        withdrawalQueue.setRate(0);
+
+        assertEq(withdrawalQueue.rate(), one / 3);
+    }
+
+    function test_queuedRequestPaysRateInForceAtClaim() public {
+        uint256 one = withdrawalQueue.RATE_ONE();
+        uint256 shares = 100_000_000;
+
+        vm.prank(user);
+        plUsd.approve(address(withdrawalQueue), shares);
+
+        vm.prank(user);
+        (uint256 requestId,) = withdrawalQueue.requestWithdrawal(shares);
+        bytes memory signature = _createSignature(requestId, user, shares, withdrawalVerifierPrivateKey);
+
+        deal(address(usdc), tokenHolder, shares / 2);
+        assert(!withdrawalQueue.isClaimable(requestId));
+
+        vm.prank(queueManager);
+        withdrawalQueue.setRate(one / 2);
+        assert(withdrawalQueue.isClaimable(requestId));
+
+        vm.prank(queueManager);
+        withdrawalQueue.setRate(one);
+        assert(!withdrawalQueue.isClaimable(requestId));
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueTooEarly.selector));
+        withdrawalQueue.claimWithdrawal(requestId, signature);
+
+        vm.prank(queueManager);
+        withdrawalQueue.setRate(one / 4);
+
+        vm.prank(user);
+        assertEq(withdrawalQueue.claimWithdrawal(requestId, signature), shares / 4);
+
+        assertEq(usdc.balanceOf(user), shares / 4);
+        assertEq(usdc.balanceOf(tokenHolder), shares / 4);
+        (, uint256 totalClaimed) = withdrawalQueue.queueMetadata();
+        assertEq(totalClaimed, shares);
+        assertEq(plUsd.balanceOf(address(withdrawalQueue)), 0);
     }
 
     function test_claimWithdrawal_revertsForDisallowedUser() public {
@@ -262,7 +335,7 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
 
         uint256 one = withdrawalQueue.RATE_ONE();
         vm.prank(queueManager);
-        withdrawalQueue.setShutdownRate(one * 3 / 4);
+        withdrawalQueue.setRate(one * 3 / 4);
 
         vm.prank(user);
         (uint256 postShutdownRequestId,) = withdrawalQueue.requestWithdrawal(withdrawalAmount);
@@ -271,9 +344,9 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         _claimWithAssertions(user, postShutdownRequestId, withdrawalAmount);
     }
 
-    function testFuzz_reverts(uint256 shutdownRate) public {
+    function testFuzz_reverts(uint256 invalidRate) public {
         uint256 one = withdrawalQueue.RATE_ONE();
-        vm.assume(shutdownRate >= one);
+        vm.assume(invalidRate > one);
 
         vm.prank(user);
         vm.expectRevert(
@@ -324,22 +397,13 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         vm.expectRevert(
             abi.encodeWithSelector(WithdrawalQueueShutdownUpgradeable.WithdrawalQueueShutdownInvalidRate.selector)
         );
-        withdrawalQueue.setShutdownRate(shutdownRate);
+        withdrawalQueue.setRate(invalidRate);
 
         vm.prank(queueManager);
         vm.expectRevert(
             abi.encodeWithSelector(WithdrawalQueueShutdownUpgradeable.WithdrawalQueueShutdownInvalidRate.selector)
         );
-        withdrawalQueue.setShutdownRate(0);
-
-        vm.prank(queueManager);
-        withdrawalQueue.setShutdownRate(one / 2);
-
-        vm.prank(queueManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(WithdrawalQueueShutdownUpgradeable.WithdrawalQueueShutdownAlreadyInShutdown.selector)
-        );
-        withdrawalQueue.setShutdownRate(one / 2);
+        withdrawalQueue.setRate(0);
     }
 
     function _claimWithAssertions(address sender, uint256 requestId, uint256 withdrawalAmount) private {
