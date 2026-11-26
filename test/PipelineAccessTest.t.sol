@@ -139,7 +139,7 @@ contract PipelineAccessTest is PipelineTestSetUp {
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
-        withdrawalQueue.setShutdownRate(1);
+        withdrawalQueue.setRate(1);
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));

@@ -13,10 +13,9 @@ abstract contract WithdrawalQueueShutdownUpgradeable is AccessManagedUpgradeable
 
     uint256 public constant RATE_ONE = 1_000_000;
 
-    event Shutdown(uint256 rate);
+    event RateSet(uint256 newRate);
 
     error WithdrawalQueueShutdownInvalidRate();
-    error WithdrawalQueueShutdownAlreadyInShutdown();
 
     /// @custom:storage-location erc7201:pipeline.storage.WithdrawalQueueShutdown
     struct WithdrawalQueueShutdownStorage {
@@ -49,15 +48,12 @@ abstract contract WithdrawalQueueShutdownUpgradeable is AccessManagedUpgradeable
         _getWithdrawalQueueShutdownStorage().rate = RATE_ONE;
     }
 
-    function setShutdownRate(uint256 shutdownRate) external restricted {
-        if (shutdownRate >= RATE_ONE || shutdownRate == 0) revert WithdrawalQueueShutdownInvalidRate();
+    function setRate(uint256 newRate) external restricted {
+        if (newRate == 0 || newRate > RATE_ONE) revert WithdrawalQueueShutdownInvalidRate();
 
-        WithdrawalQueueShutdownStorage storage $ = _getWithdrawalQueueShutdownStorage();
-        if ($.rate != RATE_ONE) revert WithdrawalQueueShutdownAlreadyInShutdown();
+        _getWithdrawalQueueShutdownStorage().rate = newRate;
 
-        $.rate = shutdownRate;
-
-        emit Shutdown(shutdownRate);
+        emit RateSet(newRate);
     }
 
     function setVerifier(address verifier) external restricted {
@@ -72,13 +68,15 @@ abstract contract WithdrawalQueueShutdownUpgradeable is AccessManagedUpgradeable
         _unpause();
     }
 
+    function rate() public view returns (uint256) {
+        return _getWithdrawalQueueShutdownStorage().rate;
+    }
+
     function convertToAssets(uint256 shares) public view virtual override returns (uint256 assets) {
-        uint256 rate = _getWithdrawalQueueShutdownStorage().rate;
-        return shares.mulDiv(rate, RATE_ONE);
+        return shares.mulDiv(rate(), RATE_ONE);
     }
 
     function convertToShares(uint256 assets) public view virtual override returns (uint256 shares) {
-        uint256 rate = _getWithdrawalQueueShutdownStorage().rate;
-        return assets.mulDiv(RATE_ONE, rate);
+        return assets.mulDiv(RATE_ONE, rate());
     }
 }
