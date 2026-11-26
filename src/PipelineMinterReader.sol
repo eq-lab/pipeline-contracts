@@ -31,6 +31,7 @@ contract PipelineMinterReader {
     uint256 private constant REPAYMENTS = 19;
     uint256 private constant REF_HASHES_SEEN = 20;
     uint256 private constant YIELD_SCHEDULE = 21;
+    uint256 private constant PENDING_FEES = 25;
 
     MinterUpgradeable public immutable minter;
     bytes32 private immutable _minterStorage;
@@ -118,15 +119,30 @@ contract PipelineMinterReader {
     }
 
     function repayment(uint256 loanId, uint256 repaymentId) external view returns (MinterUpgradeable.Repayment memory) {
-        bytes32 slot = _field(REPAYMENTS).deriveMapping(loanId).deriveMapping(repaymentId);
+        bytes32 slot = _repaymentSlot(loanId, repaymentId);
         uint256 word = _read(slot.offset(3));
         return MinterUpgradeable.Repayment({
             feeShares: _read(slot),
             fees: _read(slot.offset(1)),
             released: _read(slot.offset(2)),
             carvedOut: uint8(word) != 0,
-            yieldEpoch: uint64(word >> 8)
+            yieldEpoch: uint64(word >> 8),
+            feeUnlocksAt: uint64(word >> 72)
         });
+    }
+
+    function pendingFee(uint256 loanId, uint256 repaymentId)
+        external
+        view
+        returns (MinterUpgradeable.PendingFee memory fee)
+    {
+        bytes32 slot = _repaymentSlot(loanId, repaymentId);
+        fee.unlocksAt = uint64(_read(slot.offset(3)) >> 72);
+        if (fee.unlocksAt != 0) fee.amount = _read(slot.offset(1));
+    }
+
+    function pendingFees() external view returns (uint256) {
+        return _read(_field(PENDING_FEES));
     }
 
     function refHashSeen(bytes32 refHash) external view returns (bool) {
@@ -153,6 +169,10 @@ contract PipelineMinterReader {
             vesting: _read(slot.offset(2)),
             released: _read(slot.offset(3))
         });
+    }
+
+    function _repaymentSlot(uint256 loanId, uint256 repaymentId) private view returns (bytes32) {
+        return _field(REPAYMENTS).deriveMapping(loanId).deriveMapping(repaymentId);
     }
 
     function _address(uint256 field) private view returns (address) {

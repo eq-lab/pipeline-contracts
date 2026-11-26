@@ -3,7 +3,6 @@ pragma solidity ^0.8.34;
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import {ILoanRegistry} from "../src/interfaces/ILoanRegistry.sol";
@@ -228,10 +227,6 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
         sPlUsd.mint(UNIT, other);
         vm.stopPrank();
 
-        vm.prank(address(minter));
-        vm.expectRevert(frozen);
-        sPlUsd.burnShares(user, UNIT);
-
         vm.prank(address(loanRegistry));
         sPlUsd.carveOut(8, UNIT);
 
@@ -270,29 +265,6 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
 
         assertEq(plUsd.balanceOf(address(minter)), 10 * UNIT);
         assertEq(sPlUsd.totalAssets(), 0);
-    }
-
-    function test_burnShares() public {
-        uint256 shares = _stake(user, 100 * UNIT);
-
-        vm.roll(130);
-        vm.prank(pauser);
-        sPlUsd.pause();
-
-        vm.expectEmit(address(sPlUsd));
-        emit IERC4626.Withdraw(address(minter), address(minter), user, 50 * UNIT, shares / 2);
-        vm.expectEmit(address(sPlUsd));
-        emit StakedPipelineUSD.SharesBurned(user, shares / 2, 50 * UNIT);
-
-        vm.prank(address(minter));
-        uint256 assets = sPlUsd.burnShares(user, shares / 2);
-
-        assertEq(assets, 50 * UNIT);
-        assertEq(sPlUsd.balanceOf(user), shares - shares / 2);
-        assertEq(plUsd.balanceOf(address(minter)), 50 * UNIT);
-        assertEq(sPlUsd.balanceAt(user, 129), shares);
-        assertEq(sPlUsd.balanceAt(user, 130), shares - shares / 2);
-        assertEq(sPlUsd.totalSupplyAt(130), shares - shares / 2);
     }
 
     function test_setPocket() public {

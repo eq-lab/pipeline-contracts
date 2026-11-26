@@ -33,7 +33,6 @@ contract StakedPipelineUSD is
 
     event CarvedOut(uint256 indexed loanId, uint256 amount, uint256 moved, uint256 snapshotBlock);
     event Pulled(uint256 amount, uint256 pulled);
-    event SharesBurned(address indexed owner, uint256 shares, uint256 assets);
     event PocketSet(address pocket);
 
     error StakedPipelineUSDCarveOutBlock();
@@ -83,16 +82,6 @@ contract StakedPipelineUSD is
         pulled = _sendAssets(msg.sender, amount);
 
         emit Pulled(amount, pulled);
-    }
-
-    function burnShares(address owner, uint256 shares) external restricted returns (uint256 assets) {
-        assets = previewRedeem(shares);
-
-        _burn(owner, shares);
-        _transferAssets(msg.sender, assets);
-
-        emit Withdraw(msg.sender, msg.sender, owner, assets, shares);
-        emit SharesBurned(owner, shares, assets);
     }
 
     function setPocket(address newPocket) external restricted {

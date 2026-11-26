@@ -21,6 +21,8 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     using SafeCast for uint256;
     using SafeCast for int256;
 
+    uint256 internal constant FEE_DELAY = 14 days;
+
     enum WireInStatus {
         Direct,
         Escrowed,
@@ -76,6 +78,12 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         uint256 released;
         bool carvedOut;
         uint64 yieldEpoch;
+        uint64 feeUnlocksAt;
+    }
+
+    struct PendingFee {
+        uint256 amount;
+        uint64 unlocksAt;
     }
 
     struct AddressesConfig {
@@ -103,7 +111,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         uint256 saleId,
         uint256 cash,
         uint256 interestMinted,
-        uint256 feeShares,
+        uint256 fees,
         uint64 valueDate,
         bytes32 refHash
     );
@@ -120,6 +128,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     event YieldBooked(uint256 indexed epoch, uint256 amount);
     event YieldReleased(uint256 amount);
     event YieldCancelled(uint256 indexed epoch, uint256 amount, uint256 minted, bytes32 refHash);
+    event FeeStaked(uint256 indexed loanId, uint256 repaymentId, uint256 amount, uint256 shares);
     event TreasurySet(address treasury);
     event CustodiansSet(address[] custodians);
 
@@ -143,6 +152,9 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     error MinterWrongEntry();
     error MinterPulledMoreThanRequested(uint256 requested, uint256 pulled);
     error MinterExceedsBookedYield();
+    error MinterNoPendingFee();
+    error MinterFeeLocked();
+    error MinterReversalWindowClosed();
 
     /// @custom:storage-location erc7201:pipeline.storage.Minter
     struct MinterStorage {
@@ -168,6 +180,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         mapping(uint256 loanId => mapping(uint256 repaymentId => Repayment)) repayments;
         mapping(bytes32 refHash => bool) refHashesSeen;
         YieldVesting.Schedule yieldSchedule;
+        uint256 pendingFees;
     }
 
     // keccak256(abi.encode(uint256(keccak256("pipeline.storage.Minter")) - 1)) & ~bytes32(uint256(0xff))
@@ -323,19 +336,24 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
             yieldEpoch = _bookYield($, interest);
         }
 
-        uint256 feeShares;
+        uint64 feeUnlocksAt;
         if (fees != 0) {
-            _mintPlUsd($, address(this), fees);
-            feeShares = _stakeFor($, $.treasury, fees);
+            feeUnlocksAt = uint64(block.timestamp + FEE_DELAY);
+            $.pendingFees += fees;
         }
 
         _syncDebt($, loanId);
 
         $.repayments[loanId][repaymentId] = Repayment({
-            feeShares: feeShares, fees: fees, released: released, carvedOut: carvedOut, yieldEpoch: yieldEpoch
+            feeShares: 0,
+            fees: fees,
+            released: released,
+            carvedOut: carvedOut,
+            yieldEpoch: yieldEpoch,
+            feeUnlocksAt: feeUnlocksAt
         });
 
-        emit CashRepaid(loanId, repaymentId, saleId, cash, interest, feeShares, valueDate, refHash);
+        emit CashRepaid(loanId, repaymentId, saleId, cash, interest, fees, valueDate, refHash);
     }
 
     function reverseRepay(uint256 loanId, uint256 repaymentId, bytes32 refHash) external restricted {
@@ -348,12 +366,9 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         _consumeRef($, refHash);
         _subBankCash($, cash);
 
-        uint256 feeShares = record.feeShares;
-        if (feeShares != 0) {
-            _release($);
-            uint256 assets = $.stakedPlUsd.burnShares($.treasury, feeShares);
-            if (assets != 0) _burnPlUsd($, assets);
-            if (assets < fees) _absorb($, fees - assets);
+        if (fees != 0) {
+            if (block.timestamp >= record.feeUnlocksAt) revert MinterReversalWindowClosed();
+            _unbookFee($, record, fees);
         }
 
         if (record.carvedOut) {
@@ -500,6 +515,22 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         return _release(_getMinterStorage());
     }
 
+    function stakeFee(uint256 loanId, uint256 repaymentId) external whenNotPaused returns (uint256 shares) {
+        MinterStorage storage $ = _getMinterStorage();
+        Repayment storage record = $.repayments[loanId][repaymentId];
+        uint64 unlocksAt = record.feeUnlocksAt;
+        if (unlocksAt == 0) revert MinterNoPendingFee();
+        if (block.timestamp < unlocksAt) revert MinterFeeLocked();
+
+        uint256 fees = record.fees;
+        _unbookFee($, record, fees);
+        _mintPlUsd($, address(this), fees);
+        shares = _stakeFor($, $.treasury, fees);
+        record.feeShares = shares;
+
+        emit FeeStaked(loanId, repaymentId, fees, shares);
+    }
+
     function cancelYield(uint256 amount, uint256 epoch, bytes32 refHash) external restricted {
         if (amount == 0) revert MinterInvalidAmount();
 
@@ -631,6 +662,11 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         } else {
             minted = amount;
         }
+    }
+
+    function _unbookFee(MinterStorage storage $, Repayment storage record, uint256 fees) private {
+        record.feeUnlocksAt = 0;
+        $.pendingFees -= fees;
     }
 
     function _syncDebt(MinterStorage storage $, uint256 loanId) private {
