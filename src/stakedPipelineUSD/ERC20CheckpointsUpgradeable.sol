@@ -14,7 +14,6 @@ abstract contract ERC20CheckpointsUpgradeable is ERC20Upgradeable, IERC20Checkpo
     /// @custom:storage-location erc7201:pipeline.storage.ERC20Checkpoints
     struct ERC20CheckpointsStorage {
         mapping(address holder => Checkpoints.Trace208) balanceCheckpoints;
-        Checkpoints.Trace208 totalSupplyCheckpoints;
     }
 
     // keccak256(abi.encode(uint256(keccak256("pipeline.storage.ERC20Checkpoints")) - 1)) & ~bytes32(uint256(0xff))
@@ -31,21 +30,15 @@ abstract contract ERC20CheckpointsUpgradeable is ERC20Upgradeable, IERC20Checkpo
         return _checkpointAt(_getERC20CheckpointsStorage().balanceCheckpoints[holder], blockNumber, balanceOf(holder));
     }
 
-    function totalSupplyAt(uint256 blockNumber) public view returns (uint256) {
-        return _checkpointAt(_getERC20CheckpointsStorage().totalSupplyCheckpoints, blockNumber, totalSupply());
-    }
-
     function _update(address from, address to, uint256 value) internal virtual override {
         uint256 fromBalanceBefore = balanceOf(from);
         uint256 toBalanceBefore = balanceOf(to);
-        uint256 totalSupplyBefore = totalSupply();
 
         super._update(from, to, value);
 
         ERC20CheckpointsStorage storage $ = _getERC20CheckpointsStorage();
         if (from != address(0)) _writeCheckpoint($.balanceCheckpoints[from], fromBalanceBefore, balanceOf(from));
         if (to != address(0)) _writeCheckpoint($.balanceCheckpoints[to], toBalanceBefore, balanceOf(to));
-        _writeCheckpoint($.totalSupplyCheckpoints, totalSupplyBefore, totalSupply());
     }
 
     function _writeCheckpoint(Checkpoints.Trace208 storage checkpoints, uint256 valueBefore, uint256 value) private {

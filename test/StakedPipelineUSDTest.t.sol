@@ -124,9 +124,6 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
         assertEq(sPlUsd.balanceAt(user, 1_000), shares / 2);
         assertEq(sPlUsd.balanceAt(other, 109), 0);
         assertEq(sPlUsd.balanceAt(other, 110), shares / 4);
-        assertEq(sPlUsd.totalSupplyAt(99), 0);
-        assertEq(sPlUsd.totalSupplyAt(110), shares);
-        assertEq(sPlUsd.totalSupplyAt(120), shares - shares / 4);
     }
 
     function test_balanceHistoryKeepsTheLastChangeInABlock() public {
@@ -136,7 +133,6 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
         assertEq(sPlUsd.balanceAt(user, 100), sPlUsd.balanceOf(user));
         assertEq(sPlUsd.balanceAt(user, 100), 150 * UNIT);
         assertEq(sPlUsd.balanceAt(user, 99), 0);
-        assertEq(sPlUsd.totalSupplyAt(100), 150 * UNIT);
     }
 
     function test_balanceHistoryBeforeUpgrade() public {
@@ -153,7 +149,6 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
         assertEq(sPlUsd.balanceAt(legacy, 200), 600);
         assertEq(sPlUsd.balanceAt(untouched, 150), 500);
         assertEq(sPlUsd.balanceAt(untouched, 200), 900);
-        assertEq(sPlUsd.totalSupplyAt(150), 1_500);
 
         address dormant = makeAddr("dormant");
         deal(address(sPlUsd), dormant, 77, true);
