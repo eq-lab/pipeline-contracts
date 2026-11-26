@@ -222,7 +222,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         if (amount == 0) revert MinterInvalidAmount();
 
         MinterStorage storage $ = _getMinterStorage();
-        _consumeMintRef($, refHash);
+        _consumeRef($, refHash);
         _applyRateLimits(amount);
         $.bankCash += amount;
         _mintPlUsd($, address(this), amount);
@@ -319,7 +319,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         uint256 fees = repaymentData.mgmtFee + repaymentData.perfFee + repaymentData.oetAlloc;
 
         MinterStorage storage $ = _getMinterStorage();
-        _consumeMintRef($, refHash);
+        _consumeRef($, refHash);
         if (interest + fees != 0) _applyRateLimits(interest + fees);
         $.bankCash += cash;
 
@@ -470,7 +470,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         if (delta == 0) revert MinterInvalidAmount();
 
         MinterStorage storage $ = _getMinterStorage();
-        _consumeMintRef($, refHash);
+        _consumeRef($, refHash);
         _applyRateLimits(delta);
         $.bankCash += delta;
         _bookYield($, delta);
@@ -492,6 +492,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     function recordCorrection(int256 delta, bytes32 reasonHash, uint256 originalId) external restricted {
         MinterStorage storage $ = _getMinterStorage();
         _requireCashEntry($, originalId);
+        _consumeRef($, reasonHash);
 
         uint256 _bankCash = $.bankCash;
         int256 updated = _bankCash.toInt256() + delta;
@@ -576,14 +577,9 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     }
 
     function _consumeRef(MinterStorage storage $, bytes32 refHash) private {
-        if (refHash == bytes32(0)) return;
+        if (refHash == bytes32(0)) revert MinterMissingRef();
         if ($.refHashesSeen[refHash]) revert MinterRefHashSeen();
         $.refHashesSeen[refHash] = true;
-    }
-
-    function _consumeMintRef(MinterStorage storage $, bytes32 refHash) private {
-        if (refHash == bytes32(0)) revert MinterMissingRef();
-        _consumeRef($, refHash);
     }
 
     function _mintPlUsd(MinterStorage storage $, address to, uint256 amount) private {
