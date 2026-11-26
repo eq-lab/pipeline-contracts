@@ -72,6 +72,7 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
     error SecurityRegistryFlagged();
     error SecurityRegistryLtvTooHigh();
     error SecurityRegistryNotFlagged();
+    error SecurityRegistryFlagChanged();
     error SecurityRegistryOnlyRecordNft();
     error SecurityRegistryZeroAddress();
     error SecurityRegistrySameValue();
@@ -266,12 +267,17 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
         _release($, recordData, consentHash, true);
     }
 
-    function resolveFlag(uint256 recordId, FlagOutcome outcome, bytes32 reasonHash) external restricted whenNotPaused {
+    function resolveFlag(uint256 recordId, uint256 inspectionId, FlagOutcome outcome, bytes32 reasonHash)
+        external
+        restricted
+        whenNotPaused
+    {
         SecurityRegistryStorage storage $ = _getSecurityRegistryStorage();
         Record storage recordData = _existingRecord($, recordId);
         _requireOpen(recordData);
-        uint256 inspectionId = recordData.flaggedBy;
-        if (inspectionId == 0) revert SecurityRegistryNotFlagged();
+        uint256 flaggedBy = recordData.flaggedBy;
+        if (flaggedBy == 0) revert SecurityRegistryNotFlagged();
+        if (flaggedBy != inspectionId) revert SecurityRegistryFlagChanged();
 
         uint256 loanId = recordData.loanId;
         if (outcome == FlagOutcome.Accepted) {
