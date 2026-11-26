@@ -40,8 +40,9 @@ contract PipelineSecurityRecordNft is UUPSUpgradeable, AccessManagedUpgradeable,
         int32 varianceReferenceBps,
         int32 variancePreviousBps,
         int32 varianceGradeBps,
-        bool flagged
+        bool outOfTolerance
     );
+    event RecordFlagged(uint256 indexed loanId, uint256 indexed recordId, uint256 inspectionId);
     event InspectorsSet(address[] inspectors);
 
     error SecurityRecordNftOnlySecurityRegistry();
@@ -163,19 +164,17 @@ contract PipelineSecurityRecordNft is UUPSUpgradeable, AccessManagedUpgradeable,
 
         uint256 recordId = inspectionData.recordId;
         ISecurityRegistry.InspectionContext memory context = _context(recordId);
+        ISecurityRegistry.LatestInspection memory latest = $.securityRegistry.latestInspection(context.lotId);
 
-        bool measuresQuantity = inspectionData.kind != InspectionKind.SamplingAssay;
         uint256 quantity = inspectionData.quantity;
-        int32 varianceReferenceBps;
+        uint64 inspectedAt = inspectionData.inspectedAt;
+        (int32 varianceReferenceBps, int32 varianceGradeBps) = _referenceVariances(inspectionData, context);
         int32 variancePreviousBps;
-        int32 varianceGradeBps;
-        if (measuresQuantity) {
-            varianceReferenceBps = _varianceBps(quantity, context.referenceQuantity);
-            if (context.hasLatest) variancePreviousBps = _varianceBps(quantity, context.latestQuantity);
-        }
-        uint256 grade = inspectionData.grade;
-        if (grade != 0 && context.referenceGrade != 0) {
-            varianceGradeBps = _varianceBps(grade, context.referenceGrade);
+        bool becameLatest;
+        if (inspectionData.kind != InspectionKind.SamplingAssay) {
+            bool hasLatest = latest.inspectionId != 0;
+            if (hasLatest) variancePreviousBps = _varianceBps(quantity, latest.quantity);
+            becameLatest = !hasLatest || inspectedAt >= latest.inspectedAt;
         }
 
         inspectionData.approvedBy = msg.sender;
@@ -184,9 +183,7 @@ contract PipelineSecurityRecordNft is UUPSUpgradeable, AccessManagedUpgradeable,
         inspectionData.variancePreviousBps = variancePreviousBps;
         inspectionData.varianceGradeBps = varianceGradeBps;
 
-        bool flagged = SignedMath.abs(varianceReferenceBps) > context.toleranceBps
-            || SignedMath.abs(variancePreviousBps) > context.toleranceBps
-            || SignedMath.abs(varianceGradeBps) > context.gradeToleranceBps;
+        bool outOfTolerance = _isOutOfTolerance(context, varianceReferenceBps, variancePreviousBps, varianceGradeBps);
 
         emit InspectionApproved(
             context.loanId,
@@ -196,10 +193,19 @@ contract PipelineSecurityRecordNft is UUPSUpgradeable, AccessManagedUpgradeable,
             varianceReferenceBps,
             variancePreviousBps,
             varianceGradeBps,
-            flagged
+            outOfTolerance
         );
+
+        ISecurityRegistry.RecordStatus status = context.status;
+        bool standsIn =
+            status == ISecurityRegistry.RecordStatus.Released || status == ISecurityRegistry.RecordStatus.Enforced;
+        bool flagged = outOfTolerance && !standsIn;
+        if (flagged) emit RecordFlagged(context.loanId, recordId, inspectionId);
+        uint256 countedRecordId;
+        if (becameLatest || standsIn) countedRecordId = _flagCountedRecord(inspectionData, context, standsIn);
+
         $.securityRegistry
-            .applyInspection(recordId, inspectionId, inspectionData.inspectedAt, quantity, measuresQuantity, flagged);
+            .applyInspection(recordId, inspectionId, inspectedAt, quantity, becameLatest, flagged, countedRecordId);
     }
 
     function setInspectors(address[] calldata newInspectors) external restricted {
@@ -282,6 +288,25 @@ contract PipelineSecurityRecordNft is UUPSUpgradeable, AccessManagedUpgradeable,
         return _getSecurityRecordNftStorage().securityRegistry.inspectionContext(recordId);
     }
 
+    function _flagCountedRecord(
+        Inspection storage inspectionData,
+        ISecurityRegistry.InspectionContext memory context,
+        bool standsIn
+    ) private returns (uint256) {
+        uint256 countedRecordId = context.countedRecordId;
+        if (countedRecordId == 0 || countedRecordId == inspectionData.recordId) return 0;
+
+        ISecurityRegistry.InspectionContext memory counted = _context(countedRecordId);
+        if (!counted.goods) return 0;
+
+        (int32 referenceBps, int32 gradeBps) = _referenceVariances(inspectionData, counted);
+        if (!standsIn) gradeBps = 0;
+        if (!_isOutOfTolerance(context, referenceBps, inspectionData.variancePreviousBps, gradeBps)) return 0;
+
+        emit RecordFlagged(context.loanId, countedRecordId, inspectionData.inspectionId);
+        return countedRecordId;
+    }
+
     function _requireExistingRecord(uint256 recordId) private view {
         _context(recordId);
     }
@@ -323,6 +348,28 @@ contract PipelineSecurityRecordNft is UUPSUpgradeable, AccessManagedUpgradeable,
         if (msg.sender != address(_getSecurityRecordNftStorage().securityRegistry)) {
             revert SecurityRecordNftOnlySecurityRegistry();
         }
+    }
+
+    function _referenceVariances(Inspection storage inspectionData, ISecurityRegistry.InspectionContext memory context)
+        private
+        view
+        returns (int32 quantityBps, int32 gradeBps)
+    {
+        if (inspectionData.kind != InspectionKind.SamplingAssay) {
+            quantityBps = _varianceBps(inspectionData.quantity, context.referenceQuantity);
+        }
+        uint256 grade = inspectionData.grade;
+        if (grade != 0 && context.referenceGrade != 0) gradeBps = _varianceBps(grade, context.referenceGrade);
+    }
+
+    function _isOutOfTolerance(
+        ISecurityRegistry.InspectionContext memory context,
+        int32 referenceBps,
+        int32 previousBps,
+        int32 gradeBps
+    ) private pure returns (bool) {
+        return SignedMath.abs(referenceBps) > context.toleranceBps || SignedMath.abs(previousBps) > context.toleranceBps
+            || SignedMath.abs(gradeBps) > context.gradeToleranceBps;
     }
 
     function _varianceBps(uint256 found, uint256 base) private pure returns (int32) {

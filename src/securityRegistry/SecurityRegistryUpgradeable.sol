@@ -150,7 +150,7 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
         SecurityRegistryStorage storage $ = _getSecurityRegistryStorage();
         Record storage recordData = _existingRecord($, recordId);
         _requireStatus(recordData, RecordStatus.PendingPerfection);
-        if (_counts(recordData.protection) && _lotCounted($, recordData.loanId, recordData.lotId)) {
+        if (_counts(recordData.protection) && _countedRecordOfLot($, recordData.loanId, recordData.lotId) != 0) {
             revert SecurityRegistryLotAlreadyCounted();
         }
         _activate($, recordData, evidenceHash);
@@ -241,22 +241,20 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
         uint256 inspectionId,
         uint64 inspectedAt,
         uint256 quantity,
-        bool measuresQuantity,
-        bool flagged
+        bool becameLatest,
+        bool flagged,
+        uint256 countedRecordId
     ) external whenNotPaused {
         SecurityRegistryStorage storage $ = _getSecurityRegistryStorage();
         if (msg.sender != address($.recordNft)) revert SecurityRegistryOnlyRecordNft();
 
         Record storage recordData = $.records[recordId];
-        if (measuresQuantity) {
-            LatestInspection storage latest = $.latestInspections[recordData.lotId];
-            if (latest.inspectionId == 0 || inspectedAt >= latest.inspectedAt) {
-                latest.inspectionId = inspectionId;
-                latest.inspectedAt = inspectedAt;
-                latest.quantity = quantity;
-            }
+        if (becameLatest) {
+            $.latestInspections[recordData.lotId] =
+                LatestInspection({inspectionId: inspectionId, inspectedAt: inspectedAt, quantity: quantity});
         }
         if (flagged) recordData.flaggedBy = inspectionId;
+        if (countedRecordId != 0) $.records[countedRecordId].flaggedBy = inspectionId;
 
         _updateMarginCall($, recordData.loanId);
     }
@@ -271,6 +269,7 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
     function resolveFlag(uint256 recordId, FlagOutcome outcome, bytes32 reasonHash) external restricted whenNotPaused {
         SecurityRegistryStorage storage $ = _getSecurityRegistryStorage();
         Record storage recordData = _existingRecord($, recordId);
+        _requireOpen(recordData);
         uint256 inspectionId = recordData.flaggedBy;
         if (inspectionId == 0) revert SecurityRegistryNotFlagged();
 
@@ -381,7 +380,6 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
         SecurityRegistryStorage storage $ = _getSecurityRegistryStorage();
         Record storage recordData = _existingRecord($, recordId);
         Terms storage loanTerms = _loanTerms($, recordData.loanId);
-        LatestInspection storage latest = $.latestInspections[recordData.lotId];
 
         return InspectionContext({
             loanId: recordData.loanId,
@@ -392,8 +390,7 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
             referenceGrade: recordData.referenceGrade,
             toleranceBps: loanTerms.toleranceBps,
             gradeToleranceBps: loanTerms.gradeToleranceBps,
-            hasLatest: latest.inspectionId != 0,
-            latestQuantity: latest.quantity
+            countedRecordId: _countedRecordOfLot($, recordData.loanId, recordData.lotId)
         });
     }
 
@@ -615,14 +612,19 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
         }
     }
 
-    function _lotCounted(SecurityRegistryStorage storage $, uint256 loanId, uint256 lotId) private view returns (bool) {
+    function _countedRecordOfLot(SecurityRegistryStorage storage $, uint256 loanId, uint256 lotId)
+        private
+        view
+        returns (uint256)
+    {
         EnumerableSet.UintSet storage openIds = $.openRecords[loanId];
         uint256 length = openIds.length();
         for (uint256 i; i < length; ++i) {
-            Record storage recordData = $.records[openIds.at(i)];
-            if (recordData.lotId == lotId && _isCounted(recordData)) return true;
+            uint256 recordId = openIds.at(i);
+            Record storage recordData = $.records[recordId];
+            if (recordData.lotId == lotId && _isCounted(recordData)) return recordId;
         }
-        return false;
+        return 0;
     }
 
     function _requireLoanNotClosed(SecurityRegistryStorage storage $, uint256 loanId) private view {
