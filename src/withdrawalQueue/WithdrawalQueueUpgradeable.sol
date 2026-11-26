@@ -4,12 +4,12 @@ pragma solidity ^0.8.34;
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
-import {IERC20Managed} from "../interfaces/IERC20Managed.sol";
+import {IPipelineUSD} from "../interfaces/IPipelineUSD.sol";
 import {VerifiedRequestsQueueUpgradeable} from "../requestsQueue/VerifiedRequestsQueueUpgradeable.sol";
 
 abstract contract WithdrawalQueueUpgradeable is PausableUpgradeable, VerifiedRequestsQueueUpgradeable {
     using SafeERC20 for IERC20;
-    using SafeERC20 for IERC20Managed;
+    using SafeERC20 for IPipelineUSD;
 
     event WithdrawalRequested(address indexed withdrawer, uint256 indexed requestId, uint256 amount, uint256 queued);
     event AssetHolderSet(address indexed assetHolder);
@@ -17,6 +17,7 @@ abstract contract WithdrawalQueueUpgradeable is PausableUpgradeable, VerifiedReq
     error WithdrawalQueueZeroAddress();
     error WithdrawalQueueSameValue();
     error WithdrawalQueueTooEarly();
+    error WithdrawalQueueUserFrozen(address user);
 
     /// @custom:storage-location erc7201:pipeline.storage.WithdrawalQueue
     struct WithdrawalQueueStorage {
@@ -24,7 +25,7 @@ abstract contract WithdrawalQueueUpgradeable is PausableUpgradeable, VerifiedReq
         uint256 totalQueued;
         // total of all the requests that have been claimed
         uint256 totalClaimed;
-        IERC20Managed share;
+        IPipelineUSD share;
         IERC20 asset;
         address assetHolder;
         mapping(uint256 requestId => uint256) queued;
@@ -57,7 +58,7 @@ abstract contract WithdrawalQueueUpgradeable is PausableUpgradeable, VerifiedReq
         onlyInitializing
     {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
-        $.share = IERC20Managed(share);
+        $.share = IPipelineUSD(share);
         $.asset = IERC20(asset);
 
         _setAssetHolder(_assetHolder);
@@ -107,7 +108,7 @@ abstract contract WithdrawalQueueUpgradeable is PausableUpgradeable, VerifiedReq
     function isClaimable(uint256 requestId) external view returns (bool) {
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
         Request memory request = requests(requestId);
-        return !request.claimed && $.queued[requestId] <= claimableAmount();
+        return !request.claimed && $.share.hasAccess(request.user) && $.queued[requestId] <= claimableAmount();
     }
 
     function assetHolder() external view returns (address) {
@@ -130,6 +131,7 @@ abstract contract WithdrawalQueueUpgradeable is PausableUpgradeable, VerifiedReq
         uint256 requestAmount = _claimRequest(requestId, verifierSignature);
 
         WithdrawalQueueStorage storage $ = _getWithdrawalQueueStorage();
+        if (!$.share.hasAccess(msg.sender)) revert WithdrawalQueueUserFrozen(msg.sender);
         if ($.queued[requestId] > _claimableAmount($)) revert WithdrawalQueueTooEarly();
 
         amount = convertToAssets(requestAmount);

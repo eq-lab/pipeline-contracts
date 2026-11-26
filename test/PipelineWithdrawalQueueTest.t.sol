@@ -136,6 +136,119 @@ contract PipelineWithdrawalQueueTest is PipelineTestSetUp {
         assertEq(withdrawalQueue.convertToShares(convertAmount), Math.mulDiv(convertAmount, one, shutdownRate));
     }
 
+    function test_claimWithdrawal_revertsForDisallowedUser() public {
+        uint256 amount = 400_000_000;
+        deal(address(usdc), tokenHolder, amount);
+
+        vm.prank(user);
+        plUsd.approve(address(withdrawalQueue), amount);
+
+        vm.prank(user);
+        (uint256 requestId,) = withdrawalQueue.requestWithdrawal(amount);
+        bytes memory signature = _createSignature(requestId, user, amount, withdrawalVerifierPrivateKey);
+
+        vm.prank(whitelistAdmin);
+        whitelistRegistry.disallow(user);
+
+        assert(!withdrawalQueue.isClaimable(requestId));
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueUserFrozen.selector, user));
+        withdrawalQueue.claimWithdrawal(requestId, signature);
+
+        assert(!withdrawalQueue.requests(requestId).claimed);
+        (, uint256 totalClaimed) = withdrawalQueue.queueMetadata();
+        assertEq(totalClaimed, 0);
+        assertEq(usdc.balanceOf(user), 0);
+        assertEq(usdc.balanceOf(tokenHolder), amount);
+        assertEq(plUsd.balanceOf(address(withdrawalQueue)), amount);
+
+        vm.prank(whitelistAdmin);
+        whitelistRegistry.allow(user);
+
+        assert(withdrawalQueue.isClaimable(requestId));
+
+        vm.prank(user);
+        assertEq(withdrawalQueue.claimWithdrawal(requestId, signature), amount);
+
+        assertEq(usdc.balanceOf(user), amount);
+        assertEq(plUsd.balanceOf(address(withdrawalQueue)), 0);
+    }
+
+    function test_claimWithdrawal_allowsDisallowedUserWhenWhitelistDisabled() public {
+        uint256 amount = 400_000_000;
+        deal(address(usdc), tokenHolder, amount);
+
+        vm.prank(user);
+        plUsd.approve(address(withdrawalQueue), amount);
+
+        vm.prank(user);
+        (uint256 requestId,) = withdrawalQueue.requestWithdrawal(amount);
+        bytes memory signature = _createSignature(requestId, user, amount, withdrawalVerifierPrivateKey);
+
+        vm.prank(whitelistAdmin);
+        whitelistRegistry.disallow(user);
+
+        vm.prank(whitelistAdmin);
+        plUsd.disableWhitelist();
+
+        assert(withdrawalQueue.isClaimable(requestId));
+
+        vm.prank(user);
+        assertEq(withdrawalQueue.claimWithdrawal(requestId, signature), amount);
+        assertEq(usdc.balanceOf(user), amount);
+    }
+
+    function test_frozenRequestKeepsReserveButDoesNotBlockOthers() public {
+        uint256 frozenAmount = 300_000_000;
+        uint256 otherAmount = 200_000_000;
+
+        address other = makeAddr("other");
+        deal(address(plUsd), other, otherAmount);
+
+        vm.prank(whitelistAdmin);
+        whitelistRegistry.allow(other);
+
+        vm.prank(user);
+        plUsd.approve(address(withdrawalQueue), frozenAmount);
+
+        vm.prank(user);
+        (uint256 frozenId,) = withdrawalQueue.requestWithdrawal(frozenAmount);
+
+        vm.prank(other);
+        plUsd.approve(address(withdrawalQueue), otherAmount);
+
+        vm.prank(other);
+        (uint256 otherId,) = withdrawalQueue.requestWithdrawal(otherAmount);
+
+        bytes memory frozenSignature = _createSignature(frozenId, user, frozenAmount, withdrawalVerifierPrivateKey);
+        bytes memory otherSignature = _createSignature(otherId, other, otherAmount, withdrawalVerifierPrivateKey);
+
+        vm.prank(whitelistAdmin);
+        whitelistRegistry.disallow(user);
+
+        deal(address(usdc), tokenHolder, otherAmount);
+        assert(!withdrawalQueue.isClaimable(otherId));
+
+        vm.prank(other);
+        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueTooEarly.selector));
+        withdrawalQueue.claimWithdrawal(otherId, otherSignature);
+
+        deal(address(usdc), tokenHolder, otherAmount + frozenAmount);
+        assert(withdrawalQueue.isClaimable(otherId));
+
+        vm.prank(other);
+        assertEq(withdrawalQueue.claimWithdrawal(otherId, otherSignature), otherAmount);
+        assertEq(usdc.balanceOf(other), otherAmount);
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueueUpgradeable.WithdrawalQueueUserFrozen.selector, user));
+        withdrawalQueue.claimWithdrawal(frozenId, frozenSignature);
+
+        assertEq(usdc.balanceOf(tokenHolder), frozenAmount);
+        assertEq(plUsd.balanceOf(address(withdrawalQueue)), frozenAmount);
+    }
+
     function testFuzz_shutdownClaim(uint256 withdrawalAmount) public {
         vm.assume(withdrawalAmount >= 1_000_000 && withdrawalAmount <= plUsd.balanceOf(user) / 2);
 
