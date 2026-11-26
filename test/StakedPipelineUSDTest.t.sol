@@ -6,6 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import {ILoanRegistry} from "../src/interfaces/ILoanRegistry.sol";
+import {MinterUpgradeable} from "../src/minter/MinterUpgradeable.sol";
 import {StakedPipelineUSD} from "../src/StakedPipelineUSD.sol";
 import {PocketUpgradeable} from "../src/pocket/PocketUpgradeable.sol";
 import {WhitelistAccessedUpgradeable} from "../src/whitelist/WhitelistAccessedUpgradeable.sol";
@@ -14,6 +15,7 @@ import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 
 contract StakedPipelineUSDTest is PipelineTestSetUp {
     uint256 constant UNIT = 1e6;
+    uint256 constant YIELD_EPOCH = 30 days;
 
     address public user = makeAddr("user");
 
@@ -32,6 +34,7 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
         assertEq(sPlUsd.authority(), address(authority));
         assertEq(sPlUsd.asset(), address(plUsd));
         assertEq(sPlUsd.pocket(), address(pocket));
+        assertEq(sPlUsd.minter(), address(minter));
     }
 
     function test_notWhitelistedWithdrawalRecipient(address recipient) public {
@@ -205,6 +208,9 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
 
         bytes4 frozen = StakedPipelineUSD.StakedPipelineUSDCarveOutBlock.selector;
 
+        vm.prank(minterOps);
+        minter.pause();
+
         vm.startPrank(user);
         vm.expectRevert(frozen);
         sPlUsd.redeem(UNIT, user, user);
@@ -230,6 +236,9 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
         vm.prank(address(loanRegistry));
         sPlUsd.carveOut(8, UNIT);
 
+        vm.prank(minterOps);
+        minter.unpause();
+
         vm.roll(151);
         vm.prank(user);
         sPlUsd.redeem(UNIT, user, user);
@@ -238,14 +247,130 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
         assertEq(sPlUsd.balanceOf(user), atSnapshot - UNIT);
     }
 
-    function test_carveOutNotConfigured() public {
+    function test_notConfigured() public {
         StakedPipelineUSD implementation = new StakedPipelineUSD();
         bytes memory data = abi.encodeCall(StakedPipelineUSD.initialize, (IERC20(address(plUsd)), address(authority)));
         StakedPipelineUSD bare = StakedPipelineUSD(address(new ERC1967Proxy(address(implementation), data)));
+        bytes4 notConfigured = StakedPipelineUSD.StakedPipelineUSDNotConfigured.selector;
 
         vm.prank(admin);
-        vm.expectRevert(StakedPipelineUSD.StakedPipelineUSDNotConfigured.selector);
+        vm.expectRevert(notConfigured);
         bare.carveOut(0, 1);
+
+        vm.startPrank(user);
+        plUsd.approve(address(bare), UNIT);
+        vm.expectRevert(notConfigured);
+        bare.deposit(UNIT, user);
+        vm.expectRevert(notConfigured);
+        bare.mint(UNIT, user);
+        vm.expectRevert(notConfigured);
+        bare.withdraw(0, user, user);
+        vm.expectRevert(notConfigured);
+        bare.redeem(0, user, user);
+        vm.stopPrank();
+    }
+
+    function test_aDepositReleaseRedeemTakesNoVestedYield() public {
+        address holder = makeAddr("holder");
+        _stake(holder, 1_000 * UNIT);
+        _vest(6 * UNIT);
+        assertEq(minterReader.releasableYield(), 6 * UNIT);
+
+        address lp = makeAddr("lp");
+        uint256 shares = _stake(lp, 1_000 * UNIT);
+        assertEq(minterReader.releasableYield(), 0);
+        assertEq(sPlUsd.totalAssets(), 2_006 * UNIT);
+        assertEq(minter.releaseYield(), 0);
+
+        vm.prank(lp);
+        uint256 out = sPlUsd.redeem(shares, lp, lp);
+
+        _assertRoundedDown(out, 1_000 * UNIT);
+        _assertRoundedDown(sPlUsd.convertToAssets(sPlUsd.balanceOf(holder)), 1_006 * UNIT);
+    }
+
+    function test_anExitWithoutAReleaseStillGetsTheVestedYield() public {
+        address a = makeAddr("a");
+        _stake(a, 500 * UNIT);
+        _stake(makeAddr("b"), 500 * UNIT);
+        _vest(87 * UNIT);
+        assertEq(minterReader.releasableYield(), 87 * UNIT);
+
+        uint256 balance = sPlUsd.balanceOf(a);
+        vm.prank(a);
+        uint256 out = sPlUsd.redeem(balance, a, a);
+
+        _assertRoundedDown(out, 500 * UNIT + 87 * UNIT / 2);
+    }
+
+    function test_everyEntryAndExitReleasesFirst() public {
+        _stake(user, 100 * UNIT);
+        bytes memory release = abi.encodeCall(MinterUpgradeable.releaseYield, ());
+        deal(address(plUsd), user, 10 * UNIT, true);
+        vm.prank(user);
+        plUsd.approve(address(sPlUsd), 10 * UNIT);
+
+        _vest(UNIT);
+        assertGt(minterReader.releasableYield(), 0);
+        vm.expectCall(address(minter), release);
+        vm.prank(user);
+        sPlUsd.mint(UNIT, user);
+        assertEq(minterReader.releasableYield(), 0);
+
+        _vest(UNIT);
+        assertGt(minterReader.releasableYield(), 0);
+        vm.expectCall(address(minter), release);
+        vm.prank(user);
+        sPlUsd.withdraw(UNIT, user, user);
+        assertEq(minterReader.releasableYield(), 0);
+
+        _vest(UNIT);
+        assertGt(minterReader.releasableYield(), 0);
+        vm.expectCall(address(minter), release);
+        vm.prank(user);
+        sPlUsd.redeem(UNIT, user, user);
+        assertEq(minterReader.releasableYield(), 0);
+
+        _vest(UNIT);
+        assertGt(minterReader.releasableYield(), 0);
+        vm.expectCall(address(minter), release);
+        vm.prank(user);
+        sPlUsd.deposit(UNIT, user);
+        assertEq(minterReader.releasableYield(), 0);
+    }
+
+    function test_theMinterStakingIsNotCalledBack() public {
+        address lp = makeAddr("lp");
+        vm.prank(whitelistAdmin);
+        whitelistRegistry.allow(lp);
+
+        vm.expectCall(address(minter), abi.encodeCall(MinterUpgradeable.releaseYield, ()), 0);
+        vm.prank(mintCaller);
+        minter.recordWireIn(lp, 10 * UNIT, 0, bytes32(uint256(1)));
+
+        assertEq(sPlUsd.balanceOf(lp), 10 * UNIT);
+        assertEq(sPlUsd.totalAssets(), 10 * UNIT);
+    }
+
+    function test_entriesAndExitsWaitForAPausedMinter() public {
+        uint256 shares = _stake(user, 100 * UNIT);
+
+        vm.prank(minterOps);
+        minter.pause();
+
+        vm.startPrank(user);
+        plUsd.approve(address(sPlUsd), UNIT);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        sPlUsd.redeem(shares, user, user);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        sPlUsd.deposit(UNIT, user);
+        vm.stopPrank();
+
+        vm.prank(minterOps);
+        minter.unpause();
+
+        vm.prank(user);
+        assertEq(sPlUsd.redeem(shares, user, user), 100 * UNIT);
     }
 
     function test_pull() public {
@@ -285,6 +410,24 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
         vm.stopPrank();
     }
 
+    function test_setMinter() public {
+        address newMinter = makeAddr("newMinter");
+
+        vm.expectEmit(address(sPlUsd));
+        emit StakedPipelineUSD.MinterSet(newMinter);
+
+        vm.prank(admin);
+        sPlUsd.setMinter(newMinter);
+        assertEq(sPlUsd.minter(), newMinter);
+
+        vm.startPrank(admin);
+        vm.expectRevert(StakedPipelineUSD.StakedPipelineUSDZeroAddress.selector);
+        sPlUsd.setMinter(address(0));
+        vm.expectRevert(StakedPipelineUSD.StakedPipelineUSDSameValue.selector);
+        sPlUsd.setMinter(newMinter);
+        vm.stopPrank();
+    }
+
     function test_loanDefaultCarvesOut() public {
         uint256 shares = _stake(user, 100 * UNIT);
 
@@ -316,6 +459,18 @@ contract StakedPipelineUSDTest is PipelineTestSetUp {
         vm.prank(user);
         vm.expectRevert(StakedPipelineUSD.StakedPipelineUSDCarveOutBlock.selector);
         sPlUsd.redeem(UNIT, user, user);
+    }
+
+    function _vest(uint256 amount) private {
+        uint256 epoch = vm.getBlockTimestamp() / YIELD_EPOCH;
+        vm.prank(mintCaller);
+        minter.recordIncome(2 * amount, 0, keccak256(abi.encode(vm.getBlockTimestamp(), amount)));
+        vm.warp((epoch + 1) * YIELD_EPOCH + YIELD_EPOCH / 2);
+    }
+
+    function _assertRoundedDown(uint256 actual, uint256 expected) private pure {
+        assertLe(actual, expected);
+        assertLe(expected - actual, 1);
     }
 
     function _stake(address lp, uint256 amount) private returns (uint256 shares) {

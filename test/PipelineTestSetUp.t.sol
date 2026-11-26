@@ -161,6 +161,9 @@ contract PipelineTestSetUp is Test {
         );
         minter = PipelineMinter(address(new ERC1967Proxy(address(implementation), data)));
         minterReader = new PipelineMinterReader(address(minter));
+
+        vm.prank(admin);
+        sPlUsd.setMinter(address(minter));
     }
 
     function _setUpSecurityRegistry() private {

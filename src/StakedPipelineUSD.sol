@@ -16,6 +16,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
+import {IMinter} from "./interfaces/IMinter.sol";
 import {IPocket} from "./interfaces/IPocket.sol";
 import {IStakedPipelineUSD} from "./interfaces/IStakedPipelineUSD.sol";
 import {ERC20CheckpointsUpgradeable} from "./stakedPipelineUSD/ERC20CheckpointsUpgradeable.sol";
@@ -34,6 +35,7 @@ contract StakedPipelineUSD is
     event CarvedOut(uint256 indexed loanId, uint256 amount, uint256 moved, uint256 snapshotBlock);
     event Pulled(uint256 amount, uint256 pulled);
     event PocketSet(address pocket);
+    event MinterSet(address minter);
 
     error StakedPipelineUSDCarveOutBlock();
     error StakedPipelineUSDNotConfigured();
@@ -44,6 +46,7 @@ contract StakedPipelineUSD is
     struct StakedPipelineUSDStorage {
         IPocket pocket;
         uint256 carveOutBlock;
+        IMinter minter;
     }
 
     // keccak256(abi.encode(uint256(keccak256("pipeline.storage.StakedPipelineUSD")) - 1)) & ~bytes32(uint256(0xff))
@@ -94,6 +97,16 @@ contract StakedPipelineUSD is
         emit PocketSet(newPocket);
     }
 
+    function setMinter(address newMinter) external restricted {
+        if (newMinter == address(0)) revert StakedPipelineUSDZeroAddress();
+
+        StakedPipelineUSDStorage storage $ = _getStakedPipelineUSDStorage();
+        if (address($.minter) == newMinter) revert StakedPipelineUSDSameValue();
+        $.minter = IMinter(newMinter);
+
+        emit MinterSet(newMinter);
+    }
+
     function pause() external restricted {
         _pause();
     }
@@ -106,12 +119,17 @@ contract StakedPipelineUSD is
         return address(_getStakedPipelineUSDStorage().pocket);
     }
 
+    function minter() external view returns (address) {
+        return address(_getStakedPipelineUSDStorage().minter);
+    }
+
     function deposit(uint256 assets, address receiver)
         public
         override(ERC4626Upgradeable, IERC4626)
         whenNotPaused
         returns (uint256 shares)
     {
+        _releaseVestedYield();
         return super.deposit(assets, receiver);
     }
 
@@ -121,6 +139,7 @@ contract StakedPipelineUSD is
         whenNotPaused
         returns (uint256 assets)
     {
+        _releaseVestedYield();
         return super.mint(shares, receiver);
     }
 
@@ -130,6 +149,7 @@ contract StakedPipelineUSD is
         whenNotPaused
         returns (uint256 shares)
     {
+        _releaseVestedYield();
         return super.withdraw(assets, receiver, owner);
     }
 
@@ -139,11 +159,21 @@ contract StakedPipelineUSD is
         whenNotPaused
         returns (uint256 assets)
     {
+        _releaseVestedYield();
         return super.redeem(shares, receiver, owner);
     }
 
     function decimals() public view override(ERC20Upgradeable, ERC4626Upgradeable, IERC20Metadata) returns (uint8) {
         return super.decimals();
+    }
+
+    function _releaseVestedYield() private {
+        StakedPipelineUSDStorage storage $ = _getStakedPipelineUSDStorage();
+        if ($.carveOutBlock == block.number) revert StakedPipelineUSDCarveOutBlock();
+
+        IMinter _minter = $.minter;
+        if (address(_minter) == address(0)) revert StakedPipelineUSDNotConfigured();
+        if (msg.sender != address(_minter)) _minter.releaseYield();
     }
 
     function _sendAssets(address to, uint256 amount) private returns (uint256 sent) {
