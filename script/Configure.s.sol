@@ -40,6 +40,7 @@ contract Configure is Script, Deployments {
         if (loanRegistry.maxFeeBps() != maxFeeBps) loanRegistry.setMaxFeeBps(maxFeeBps);
         if (loanRegistry.maxResidual() != maxResidual) loanRegistry.setMaxResidual(maxResidual);
         if (stakedPipelineUSD.pocket() != pocket) stakedPipelineUSD.setPocket(pocket);
+        if (stakedPipelineUSD.minter() != minter) stakedPipelineUSD.setMinter(minter);
         if (securityRecordNft.securityRegistry() != securityRegistry) {
             securityRecordNft.setSecurityRegistry(securityRegistry);
         }
