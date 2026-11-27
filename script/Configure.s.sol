@@ -6,6 +6,7 @@ import {Script} from "forge-std/Script.sol";
 import {Deployments} from "./base/Deployments.sol";
 
 import {PipelineLoanRegistry} from "../src/PipelineLoanRegistry.sol";
+import {PipelineLoanRegistryReader} from "../src/PipelineLoanRegistryReader.sol";
 import {PipelineSecurityRecordNft} from "../src/PipelineSecurityRecordNft.sol";
 import {StakedPipelineUSD} from "../src/StakedPipelineUSD.sol";
 import {WhitelistRegistry} from "../src/WhitelistRegistry.sol";
@@ -24,6 +25,8 @@ contract Configure is Script, Deployments {
         (address securityRecordNftProxy,) = readUpgradeable("PipelineSecurityRecordNft");
 
         PipelineLoanRegistry loanRegistry = PipelineLoanRegistry(loanRegistryProxy);
+        PipelineLoanRegistryReader loanRegistryReader =
+            PipelineLoanRegistryReader(readPlain("PipelineLoanRegistryReader"));
         PipelineSecurityRecordNft securityRecordNft = PipelineSecurityRecordNft(securityRecordNftProxy);
         StakedPipelineUSD stakedPipelineUSD = StakedPipelineUSD(stakedPipelineUSDProxy);
         WhitelistRegistry whitelistRegistry = WhitelistRegistry(whitelistRegistryProxy);
@@ -36,9 +39,9 @@ contract Configure is Script, Deployments {
         address[5] memory plUsdHolders = [stakedPipelineUSDProxy, pocket, minter, treasury, withdrawalQueue];
 
         vm.startBroadcast();
-        if (loanRegistry.capitalWallet() != capitalWallet) loanRegistry.setCapitalWallet(capitalWallet);
-        if (loanRegistry.maxFeeBps() != maxFeeBps) loanRegistry.setMaxFeeBps(maxFeeBps);
-        if (loanRegistry.maxResidual() != maxResidual) loanRegistry.setMaxResidual(maxResidual);
+        if (loanRegistryReader.capitalWallet() != capitalWallet) loanRegistry.setCapitalWallet(capitalWallet);
+        if (loanRegistryReader.maxFeeBps() != maxFeeBps) loanRegistry.setMaxFeeBps(maxFeeBps);
+        if (loanRegistryReader.maxResidual() != maxResidual) loanRegistry.setMaxResidual(maxResidual);
         if (stakedPipelineUSD.pocket() != pocket) stakedPipelineUSD.setPocket(pocket);
         if (stakedPipelineUSD.minter() != minter) stakedPipelineUSD.setMinter(minter);
         if (securityRecordNft.securityRegistry() != securityRegistry) {

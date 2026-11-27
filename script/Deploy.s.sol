@@ -9,6 +9,7 @@ import {DeployPipelineUSD} from "./deployers/DeployPipelineUSD.sol";
 import {DeployStakedPipelineUSD} from "./deployers/DeployStakedPipelineUSD.sol";
 import {DeployPocket} from "./deployers/DeployPocket.sol";
 import {DeployLoanRegistry} from "./deployers/DeployLoanRegistry.sol";
+import {DeployLoanRegistryReader} from "./deployers/DeployLoanRegistryReader.sol";
 import {DeploySecurityRecordNft} from "./deployers/DeploySecurityRecordNft.sol";
 import {DeploySecurityRegistry} from "./deployers/DeploySecurityRegistry.sol";
 import {DeploySecurityRegistryReader} from "./deployers/DeploySecurityRegistryReader.sol";
@@ -30,6 +31,7 @@ contract Deploy is Script {
         (address stakedPipelineUSD,) = (new DeployStakedPipelineUSD(tag)).deployUpgradeable();
         (address pocket,) = (new DeployPocket(tag)).deployUpgradeable();
         (address loanRegistry,) = (new DeployLoanRegistry(tag)).deployUpgradeable();
+        (new DeployLoanRegistryReader(tag)).deployPlain();
         (address securityRecordNft,) = (new DeploySecurityRecordNft(tag)).deployUpgradeable();
         (address securityRegistry,) = (new DeploySecurityRegistry(tag)).deployUpgradeable();
         address securityRegistryReader = (new DeploySecurityRegistryReader(tag)).deployPlain();

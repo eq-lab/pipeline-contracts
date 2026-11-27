@@ -13,6 +13,7 @@ import {WhitelistRegistry} from "../src/WhitelistRegistry.sol";
 import {PipelineDepositManager} from "../src/PipelineDepositManager.sol";
 import {PipelineWithdrawalQueue} from "../src/PipelineWithdrawalQueue.sol";
 import {PipelineLoanRegistry} from "../src/PipelineLoanRegistry.sol";
+import {PipelineLoanRegistryReader} from "../src/PipelineLoanRegistryReader.sol";
 import {PipelinePocket} from "../src/PipelinePocket.sol";
 import {PipelineMinter} from "../src/PipelineMinter.sol";
 import {PipelineMinterReader} from "../src/PipelineMinterReader.sol";
@@ -41,6 +42,7 @@ contract PipelineTestSetUp is Test {
     PipelineDepositManager public depositManager;
     PipelineWithdrawalQueue public withdrawalQueue;
     PipelineLoanRegistry public loanRegistry;
+    PipelineLoanRegistryReader public loanRegistryReader;
     PipelinePocket public pocket;
     PipelineMinter public minter;
     PipelineMinterReader public minterReader;
@@ -331,6 +333,7 @@ contract PipelineTestSetUp is Test {
             (address(authority), "Loan registry name", "Loan registry symbol", address(sPlUsd), address(pocket))
         );
         loanRegistry = PipelineLoanRegistry(address(new ERC1967Proxy(address(implementation), data)));
+        loanRegistryReader = new PipelineLoanRegistryReader(address(loanRegistry));
 
         vm.startPrank(admin);
         loanRegistry.setCapitalWallet(capitalWallet);
