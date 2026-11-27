@@ -4,7 +4,9 @@ pragma solidity ^0.8.34;
 import {
     ERC721PausableUpgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721PausableUpgradeable.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 import {ILoanRegistry} from "../interfaces/ILoanRegistry.sol";
 import {IStakedPipelineUSD} from "../interfaces/IStakedPipelineUSD.sol";
@@ -23,6 +25,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         uint256 seniorPrincipalRepaid;
         uint256 seniorInterest;
         uint256 interestFees;
+        uint256 rateSeconds;
     }
 
     struct RepaymentTotals {
@@ -38,7 +41,9 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     event PaymentRecorded(
         uint256 indexed loanId, uint256 indexed repaymentId, RepaymentData repayment, uint256 outstanding
     );
-    event PaymentUnrecorded(uint256 indexed loanId, uint256 indexed repaymentId, uint256 outstanding);
+    event PaymentUnrecorded(
+        uint256 indexed loanId, uint256 indexed repaymentId, uint256 outstanding, uint256 interestRestored
+    );
     event LoanDefaulted(uint256 indexed loanId, uint256 outstanding, uint256 moved);
     event LoanWrittenDown(
         uint256 indexed loanId, uint256 amount, uint256 outstanding, uint256 burned, uint256 covered, uint256 unabsorbed
@@ -140,24 +145,14 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         revert LoanRegistryNonTransferrable();
     }
 
-    function nextLoanId() external view returns (uint256) {
-        return _getLoanRegistryStorage().nextLoanId;
+    function extsload(bytes32 slot) external view returns (bytes32) {
+        return StorageSlot.getBytes32Slot(slot).value;
     }
 
     function immutableLoanData(uint256 loanId) external view returns (ImmutableLoanData memory) {
         LoanRegistryStorage storage $ = _getLoanRegistryStorage();
         _existingLoan($, loanId);
         return $.immutableLoanData[loanId];
-    }
-
-    function mutableLoanData(uint256 loanId) external view returns (MutableLoanData memory) {
-        return _existingLoan(_getLoanRegistryStorage(), loanId);
-    }
-
-    function economicsEpoch(uint256 loanId, uint256 epochId) external view returns (EconomicsEpoch memory) {
-        LoanRegistryStorage storage $ = _getLoanRegistryStorage();
-        _existingLoan($, loanId);
-        return $.economicsEpochs[loanId][epochId];
     }
 
     function status(uint256 loanId) external view returns (LoanStatus) {
@@ -179,34 +174,6 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
             accruedInterest: _accruedInterest($, loanId),
             carvedOut: loan.carvedOut
         });
-    }
-
-    function outstandingTotal() external view returns (uint256) {
-        return _getLoanRegistryStorage().outstandingTotal;
-    }
-
-    function unabsorbedTotal() external view returns (uint256) {
-        return _getLoanRegistryStorage().unabsorbedTotal;
-    }
-
-    function capitalWallet() external view returns (address) {
-        return _getLoanRegistryStorage().capitalWallet;
-    }
-
-    function stakedPlUsd() external view returns (address) {
-        return address(_getLoanRegistryStorage().stakedPlUsd);
-    }
-
-    function pocket() external view returns (address) {
-        return address(_getLoanRegistryStorage().pocket);
-    }
-
-    function maxFeeBps() external view returns (uint32) {
-        return _getLoanRegistryStorage().maxFeeBps;
-    }
-
-    function maxResidual() external view returns (uint256) {
-        return _getLoanRegistryStorage().maxResidual;
     }
 
     function _drawLoan(string calldata metadataURI, ImmutableLoanData calldata economics)
@@ -321,6 +288,8 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
 
         _advanceEpoch($, loanId);
 
+        uint256 rateSeconds;
+        if (repayment.seniorPrincipalRepaid != 0) rateSeconds = _openEpoch($, loanId, loan).rateSeconds;
         loan.repaid += repayment.seniorPrincipalRepaid;
         repaymentId = loan.nextRepaymentId;
         unchecked {
@@ -338,7 +307,8 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
             offtakerReceived: repayment.offtakerReceived,
             seniorPrincipalRepaid: repayment.seniorPrincipalRepaid,
             seniorInterest: repayment.seniorInterest,
-            interestFees: interestFees
+            interestFees: interestFees,
+            rateSeconds: rateSeconds
         });
 
         emit PaymentRecorded(loanId, repaymentId, repayment, _outstanding(loan));
@@ -364,6 +334,12 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
 
         principal = repayment.seniorPrincipalRepaid;
         interest = repayment.seniorInterest;
+        uint256 interestRestored;
+        if (principal != 0) {
+            EconomicsEpoch storage openEpoch = _openEpoch($, loanId, loan);
+            interestRestored = Math.ceilDiv((openEpoch.rateSeconds - repayment.rateSeconds) * principal, YEAR * ONE);
+            openEpoch.accruedInterest += interestRestored;
+        }
         loan.repaid -= principal;
         $.outstandingTotal += principal;
 
@@ -372,7 +348,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         totals.seniorInterest -= interest;
         totals.interestFees -= repayment.interestFees;
 
-        emit PaymentUnrecorded(loanId, repaymentId, _outstanding(loan));
+        emit PaymentUnrecorded(loanId, repaymentId, _outstanding(loan), interestRestored);
     }
 
     function _rollover(uint256 loanId, uint32 newRate, uint64 newMaturityTimestamp) internal whenNotPaused {
@@ -591,7 +567,8 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
                 accruedInterest: 0,
                 effectiveFrom: uint64(block.timestamp),
                 maturityDate: loan.currentMaturityTimestamp,
-                seniorInterestRate: loan.currentRate
+                seniorInterestRate: loan.currentRate,
+                rateSeconds: 0
             });
             loan.nextEconomicsEpochsId = 1;
             return true;
@@ -625,7 +602,9 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
             accruedInterest: lastEpoch.accruedInterest + _epochInterest(lastEpoch, _outstanding(loan)),
             effectiveFrom: uint64(block.timestamp),
             maturityDate: maturityDate,
-            seniorInterestRate: seniorInterestRate
+            seniorInterestRate: seniorInterestRate,
+            rateSeconds: lastEpoch.rateSeconds + uint96(block.timestamp - lastEpoch.effectiveFrom)
+                * lastEpoch.seniorInterestRate
         });
 
         unchecked {
@@ -639,7 +618,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         uint256 economicsEpochsCount = loan.nextEconomicsEpochsId;
         if (economicsEpochsCount == 0 || loan.status == LoanStatus.Closed) return 0;
 
-        EconomicsEpoch storage lastEpoch = $.economicsEpochs[loanId][economicsEpochsCount - 1];
+        EconomicsEpoch storage lastEpoch = _openEpoch($, loanId, loan);
         uint256 gross = lastEpoch.accruedInterest + _epochInterest(lastEpoch, _outstanding(loan));
 
         RepaymentTotals storage totals = $.repaymentTotals[loanId];
@@ -650,7 +629,15 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     }
 
     function _epochInterest(EconomicsEpoch storage epoch, uint256 principal) private view returns (uint256) {
-        return (block.timestamp - epoch.effectiveFrom) * epoch.seniorInterestRate * principal / (YEAR * ONE);
+        return Math.ceilDiv((block.timestamp - epoch.effectiveFrom) * epoch.seniorInterestRate * principal, YEAR * ONE);
+    }
+
+    function _openEpoch(LoanRegistryStorage storage $, uint256 loanId, MutableLoanData storage loan)
+        private
+        view
+        returns (EconomicsEpoch storage)
+    {
+        return $.economicsEpochs[loanId][loan.nextEconomicsEpochsId - 1];
     }
 
     function _outstanding(MutableLoanData storage loan) private view returns (uint256) {

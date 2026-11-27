@@ -973,7 +973,7 @@ contract MinterTest is PipelineTestSetUp {
         assertEq(pocket.claim(loanId), 800_000_000);
         assertEq(plUsd.balanceOf(b), 1_000_000_000);
         assertEq(minterReader.unabsorbedTotal(), 0);
-        assertEq(loanRegistry.unabsorbedTotal(), 0);
+        assertEq(loanRegistryReader.unabsorbedTotal(), 0);
         _assertBacked();
     }
 
@@ -998,7 +998,7 @@ contract MinterTest is PipelineTestSetUp {
         vm.roll(vm.getBlockNumber() + 1);
         vm.prank(loanRegistryManager);
         loanRegistry.writeDown(writtenOff, 500_000_000);
-        assertEq(loanRegistry.unabsorbedTotal(), 0);
+        assertEq(loanRegistryReader.unabsorbedTotal(), 0);
         assertEq(pocket.pocket(recovered).held, 100_000_000);
         _assertBacked();
 
@@ -1013,7 +1013,7 @@ contract MinterTest is PipelineTestSetUp {
         assertEq(pocket.claim(recovered), 100_000_000);
         assertEq(plUsd.balanceOf(b), 400_000_000);
         assertEq(minterReader.unabsorbedTotal(), 0);
-        assertEq(loanRegistry.unabsorbedTotal(), 0);
+        assertEq(loanRegistryReader.unabsorbedTotal(), 0);
         _assertBacked();
     }
 
@@ -1263,6 +1263,40 @@ contract MinterTest is PipelineTestSetUp {
         _assertBacked();
     }
 
+    function test_aReversedRepaymentLeavesTheFullInterestBookable() public {
+        _wireInLp(1_000_000_000, 1);
+        uint256 loanId = _drawLoan();
+        _disburse(loanId, 400_000_000, 2);
+        uint256 control = _drawLoan();
+        _disburse(control, 400_000_000, 3);
+        uint256 start = vm.getBlockTimestamp();
+        uint256 month = YEAR / 12;
+
+        vm.warp(start + month);
+        uint256 month1 = loanRegistry.loanMoney(control).accruedInterest;
+        _repayInterest(loanId, month1, 4);
+        _repayInterest(control, month1, 5);
+
+        vm.warp(start + month + 10 days);
+        ILoanRegistry.RepaymentData memory principal;
+        principal.offtakerReceived = 200_000_000;
+        principal.seniorPrincipalRepaid = 200_000_000;
+        vm.prank(mintCaller);
+        uint256 principalId = minter.repay(loanId, principal, 0, _h(6), 0);
+
+        vm.warp(start + month + 13 days);
+        vm.prank(minterOps);
+        minter.reverseRepay(loanId, principalId, _h(7));
+
+        vm.warp(start + 2 * month);
+        uint256 month2 = loanRegistry.loanMoney(control).accruedInterest;
+        _repayInterest(loanId, month2, 8);
+        _repayInterest(control, month2, 9);
+
+        assertEq(loanRegistry.outstanding(loanId), loanRegistry.outstanding(control));
+        _assertBacked();
+    }
+
     function test_cancelYieldTakesBackAMistakenIncome() public {
         _income(700, 1);
         _income(300, 2);
@@ -1396,6 +1430,15 @@ contract MinterTest is PipelineTestSetUp {
         return minter.repay(loanId, repaymentData, 0, _h(refN), 0);
     }
 
+    function _repayInterest(uint256 loanId, uint256 amount, uint256 refN) private {
+        ILoanRegistry.RepaymentData memory repaymentData;
+        repaymentData.offtakerReceived = amount;
+        repaymentData.seniorInterest = amount;
+
+        vm.prank(mintCaller);
+        minter.repay(loanId, repaymentData, 0, _h(refN), 0);
+    }
+
     function _repayWithoutFees(uint256 loanId, uint256 refN) private returns (uint256 repaymentId) {
         ILoanRegistry.RepaymentData memory repaymentData = _repaymentData();
         repaymentData.offtakerReceived = 94_000_000;
@@ -1419,7 +1462,7 @@ contract MinterTest is PipelineTestSetUp {
     }
 
     function _assertBacked() private view {
-        uint256 totalAssets = minterReader.bankCash() + minterReader.inFlight() + loanRegistry.outstandingTotal();
+        uint256 totalAssets = minterReader.bankCash() + minterReader.inFlight() + loanRegistryReader.outstandingTotal();
         address[] memory custodians = minterReader.custodians();
         for (uint256 i; i < custodians.length; ++i) {
             totalAssets += usdc.balanceOf(custodians[i]);

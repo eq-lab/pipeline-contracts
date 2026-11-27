@@ -2,6 +2,7 @@
 pragma solidity ^0.8.34;
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
@@ -17,6 +18,7 @@ import {PipelineTestSetUp} from "./PipelineTestSetUp.t.sol";
 contract LoanRegistryTest is PipelineTestSetUp {
     uint256 constant ONE = 1_000_000;
     uint256 constant YEAR = 31557600;
+    uint256 constant DAY = 1 days;
 
     uint256 constant SENIOR_TRANCHE = 1_000_000_000;
     uint256 constant EQUITY_TRANCHE = 200_000_000;
@@ -38,14 +40,14 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(loanRegistry.authority(), address(authority));
         assertEq(loanRegistry.name(), "Loan registry name");
         assertEq(loanRegistry.symbol(), "Loan registry symbol");
-        assertEq(loanRegistry.nextLoanId(), 0);
-        assertEq(loanRegistry.capitalWallet(), capitalWallet);
-        assertEq(loanRegistry.stakedPlUsd(), address(sPlUsd));
-        assertEq(loanRegistry.pocket(), address(pocket));
-        assertEq(loanRegistry.maxFeeBps(), maxFeeBps);
-        assertEq(loanRegistry.maxResidual(), maxResidual);
-        assertEq(loanRegistry.outstandingTotal(), 0);
-        assertEq(loanRegistry.unabsorbedTotal(), 0);
+        assertEq(loanRegistryReader.nextLoanId(), 0);
+        assertEq(loanRegistryReader.capitalWallet(), capitalWallet);
+        assertEq(loanRegistryReader.stakedPlUsd(), address(sPlUsd));
+        assertEq(loanRegistryReader.pocket(), address(pocket));
+        assertEq(loanRegistryReader.maxFeeBps(), maxFeeBps);
+        assertEq(loanRegistryReader.maxResidual(), maxResidual);
+        assertEq(loanRegistryReader.outstandingTotal(), 0);
+        assertEq(loanRegistryReader.unabsorbedTotal(), 0);
     }
 
     function test_drawLoan() public {
@@ -60,7 +62,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         uint256 loanId = loanRegistry.drawLoan(METADATA_URI, economics);
 
         assertEq(loanId, 0);
-        assertEq(loanRegistry.nextLoanId(), 1);
+        assertEq(loanRegistryReader.nextLoanId(), 1);
         assertEq(loanRegistry.ownerOf(loanId), capitalWallet);
         assertEq(loanRegistry.tokenURI(loanId), METADATA_URI);
 
@@ -74,7 +76,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(stored.originationDate, economics.originationDate);
         assertEq(stored.originalMaturityDate, economics.originalMaturityDate);
 
-        ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
+        ILoanRegistry.MutableLoanData memory loan = loanRegistryReader.mutableLoanData(loanId);
         assertEq(uint8(loan.status), uint8(ILoanRegistry.LoanStatus.Approved));
         assertEq(loan.nextEconomicsEpochsId, 0);
         assertEq(loan.nextRepaymentId, 0);
@@ -156,6 +158,31 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(loanRegistry.tokenURI(loanId), "metadata only");
     }
 
+    function test_theReaderDecodesLongUrisAndRateSeconds() public {
+        uint256 loanId = _drawAndDisburse();
+        string memory uri = "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/loans/0/metadata.json";
+
+        vm.prank(loanRegistryManager);
+        loanRegistry.updateMutable(loanId, ILoanRegistry.LoanStatus.WatchList, uri);
+        skip(DAY);
+        _amendRate(loanId, RATE * 2);
+        skip(2 * DAY);
+        _amendRate(loanId, RATE);
+
+        ILoanRegistry.MutableLoanData memory loan = loanRegistryReader.mutableLoanData(loanId);
+        assertEq(loan.metadataURI, uri);
+        assertEq(loan.metadataURI, loanRegistry.tokenURI(loanId));
+        assertEq(uint8(loan.status), uint8(ILoanRegistry.LoanStatus.WatchList));
+        assertEq(loan.nextEconomicsEpochsId, 3);
+
+        assertEq(loanRegistryReader.economicsEpoch(loanId, 0).rateSeconds, 0);
+        assertEq(loanRegistryReader.economicsEpoch(loanId, 1).rateSeconds, RATE * DAY);
+        ILoanRegistry.EconomicsEpoch memory epoch = loanRegistryReader.economicsEpoch(loanId, 2);
+        assertEq(epoch.rateSeconds, RATE * DAY + RATE * 2 * 2 * DAY);
+        assertEq(epoch.seniorInterestRate, RATE);
+        assertEq(epoch.effectiveFrom, vm.getBlockTimestamp());
+    }
+
     function test_updateMutableReverts() public {
         vm.prank(loanRegistryManager);
         vm.expectRevert(LoanRegistryUpgradeable.LoanRegistryNonExistentLoanId.selector);
@@ -215,14 +242,14 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
         _disburse(loanId, half);
 
-        ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
+        ILoanRegistry.MutableLoanData memory loan = loanRegistryReader.mutableLoanData(loanId);
         assertEq(uint8(loan.status), uint8(ILoanRegistry.LoanStatus.Performing));
         assertEq(loan.nextEconomicsEpochsId, 1);
         assertEq(loan.disbursed, half);
         assertEq(loanRegistry.outstanding(loanId), half);
-        assertEq(loanRegistry.outstandingTotal(), half);
+        assertEq(loanRegistryReader.outstandingTotal(), half);
 
-        ILoanRegistry.EconomicsEpoch memory epoch = loanRegistry.economicsEpoch(loanId, 0);
+        ILoanRegistry.EconomicsEpoch memory epoch = loanRegistryReader.economicsEpoch(loanId, 0);
         assertEq(epoch.accruedInterest, 0);
         assertEq(epoch.effectiveFrom, vm.getBlockTimestamp());
         assertEq(epoch.maturityDate, loan.currentMaturityTimestamp);
@@ -231,7 +258,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.recordLogs();
         _disburse(loanId, half);
         assertEq(vm.getRecordedLogs().length, 1);
-        assertEq(loanRegistry.outstandingTotal(), SENIOR_TRANCHE);
+        assertEq(loanRegistryReader.outstandingTotal(), SENIOR_TRANCHE);
     }
 
     function test_disburseCapitalizesPriorInterest() public {
@@ -244,10 +271,10 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
         _disburse(loanId, half);
 
-        ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
+        ILoanRegistry.MutableLoanData memory loan = loanRegistryReader.mutableLoanData(loanId);
         assertEq(loan.nextEconomicsEpochsId, 2);
         assertEq(loan.disbursed, SENIOR_TRANCHE);
-        assertEq(loanRegistry.economicsEpoch(loanId, 1).accruedInterest, 50_000_000);
+        assertEq(loanRegistryReader.economicsEpoch(loanId, 1).accruedInterest, 50_000_000);
         assertEq(_accruedInterest(loanId), 50_000_000);
 
         skip(YEAR);
@@ -317,11 +344,11 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(address(minter));
         loanRegistry.undisburse(loanId, half);
 
-        ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
+        ILoanRegistry.MutableLoanData memory loan = loanRegistryReader.mutableLoanData(loanId);
         assertEq(loan.disbursed, 0);
         assertEq(loan.nextEconomicsEpochsId, 2);
         assertEq(loanRegistry.outstanding(loanId), 0);
-        assertEq(loanRegistry.outstandingTotal(), 0);
+        assertEq(loanRegistryReader.outstandingTotal(), 0);
         assertEq(uint8(loan.status), uint8(ILoanRegistry.LoanStatus.Performing));
     }
 
@@ -384,14 +411,14 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(repaymentId, 0);
         assertFalse(carvedOut);
 
-        ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
+        ILoanRegistry.MutableLoanData memory loan = loanRegistryReader.mutableLoanData(loanId);
         assertEq(loan.nextRepaymentId, 1);
         assertEq(loan.nextEconomicsEpochsId, 2);
         assertEq(loan.repaid, 10_000_000);
-        assertEq(loanRegistry.economicsEpoch(loanId, 1).accruedInterest, 100_000_000);
+        assertEq(loanRegistryReader.economicsEpoch(loanId, 1).accruedInterest, 100_000_000);
 
         assertEq(loanRegistry.outstanding(loanId), SENIOR_TRANCHE - 10_000_000);
-        assertEq(loanRegistry.outstandingTotal(), SENIOR_TRANCHE - 10_000_000);
+        assertEq(loanRegistryReader.outstandingTotal(), SENIOR_TRANCHE - 10_000_000);
         assertEq(_accruedInterest(loanId), 37_500_000);
     }
 
@@ -537,7 +564,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         uint256 outstandingBefore = loanRegistry.outstanding(loanId);
 
         vm.expectEmit(address(loanRegistry));
-        emit LoanRegistryUpgradeable.PaymentUnrecorded(loanId, repaymentId, SENIOR_TRANCHE);
+        emit LoanRegistryUpgradeable.PaymentUnrecorded(loanId, repaymentId, SENIOR_TRANCHE, 0);
 
         vm.prank(address(minter));
         (uint256 principal, uint256 interest) = loanRegistry.unrecordPayment(loanId, repaymentId);
@@ -545,11 +572,158 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(interest, 40_000_000);
 
         assertEq(loanRegistry.outstanding(loanId), outstandingBefore + 10_000_000);
-        assertEq(loanRegistry.outstandingTotal(), SENIOR_TRANCHE);
-        assertEq(loanRegistry.mutableLoanData(loanId).repaid, 0);
+        assertEq(loanRegistryReader.outstandingTotal(), SENIOR_TRANCHE);
+        assertEq(loanRegistryReader.mutableLoanData(loanId).repaid, 0);
         assertEq(_accruedInterest(loanId), 100_000_000);
 
         _recordPayment(loanId, _equity(FACILITY));
+    }
+
+    function test_unrecordPaymentRestoresInterestSinceTheRepayment() public {
+        (uint256 loanId, uint256 control, uint256 start) = _loanAndControl();
+        uint256 half = SENIOR_TRANCHE / 2;
+
+        vm.warp(start + 10 * DAY);
+        uint256 repaymentId = _recordPayment(loanId, _principal(half));
+
+        vm.warp(start + 13 * DAY);
+        uint256 before = _accruedInterest(loanId);
+        uint256 restored = _restored(half, RATE * 3 * DAY);
+
+        vm.expectEmit(address(loanRegistry));
+        emit LoanRegistryUpgradeable.PaymentUnrecorded(loanId, repaymentId, SENIOR_TRANCHE, restored);
+        _unrecordPayment(loanId, repaymentId);
+        assertEq(_accruedInterest(loanId) - before, restored);
+
+        vm.warp(start + 30 * DAY);
+        assertEq(loanRegistry.outstanding(loanId), loanRegistry.outstanding(control));
+        _assertWithinRounding(_accruedInterest(loanId), _accruedInterest(control), 3);
+    }
+
+    function test_unrecordPaymentRestoresInterestAtEachEpochsRate() public {
+        (uint256 loanId, uint256 control, uint256 start) = _loanAndControl();
+        uint256 half = SENIOR_TRANCHE / 2;
+        uint32 newRate = uint32(ONE / 5);
+
+        vm.warp(start + 10 * DAY);
+        uint256 repaymentId = _recordPayment(loanId, _principal(half));
+
+        vm.warp(start + 11 * DAY);
+        _amendRate(loanId, newRate);
+        _amendRate(control, newRate);
+
+        vm.warp(start + 13 * DAY);
+        uint256 before = _accruedInterest(loanId);
+        _unrecordPayment(loanId, repaymentId);
+        assertEq(_accruedInterest(loanId) - before, _restored(half, RATE * DAY + newRate * 2 * DAY));
+
+        vm.warp(start + 30 * DAY);
+        _assertWithinRounding(_accruedInterest(loanId), _accruedInterest(control), 4);
+    }
+
+    function test_unrecordPaymentLetsTheBorrowersFullInterestBook() public {
+        (uint256 loanId, uint256 control, uint256 start) = _loanAndControl();
+        uint256 month = YEAR / 12;
+
+        vm.warp(start + month);
+        uint256 month1 = _accruedInterest(control);
+        _recordPayment(loanId, _interestOnly(month1));
+        _recordPayment(control, _interestOnly(month1));
+
+        vm.warp(start + month + 10 * DAY);
+        uint256 repaymentId = _recordPayment(loanId, _principal(SENIOR_TRANCHE / 2));
+        vm.warp(start + month + 13 * DAY);
+        _unrecordPayment(loanId, repaymentId);
+
+        vm.warp(start + 2 * month);
+        uint256 month2 = _accruedInterest(control);
+        _recordPayment(loanId, _interestOnly(month2));
+        _recordPayment(control, _interestOnly(month2));
+
+        assertEq(loanRegistry.outstanding(loanId), loanRegistry.outstanding(control));
+        _assertWithinRounding(_accruedInterest(loanId), _accruedInterest(control), 4);
+    }
+
+    function test_unrecordPaymentInTheSameBlockRestoresNothing() public {
+        (uint256 loanId, uint256 control, uint256 start) = _loanAndControl();
+
+        vm.warp(start + 10 * DAY);
+        uint256 before = _accruedInterest(loanId);
+        uint256 repaymentId = _recordPayment(loanId, _principal(SENIOR_TRANCHE / 2));
+
+        vm.expectEmit(address(loanRegistry));
+        emit LoanRegistryUpgradeable.PaymentUnrecorded(loanId, repaymentId, SENIOR_TRANCHE, 0);
+        _unrecordPayment(loanId, repaymentId);
+        assertEq(_accruedInterest(loanId), before);
+
+        vm.warp(start + 30 * DAY);
+        _assertWithinRounding(_accruedInterest(loanId), _accruedInterest(control), 1);
+    }
+
+    function test_unrecordPaymentWithLaterRepaymentsAndInterestMatchesControl() public {
+        (uint256 loanId, uint256 control, uint256 start) = _loanAndControl();
+        uint256 half = SENIOR_TRANCHE / 2;
+
+        vm.warp(start + 10 * DAY);
+        uint256 interest = _accruedInterest(loanId);
+        ILoanRegistry.RepaymentData memory first = _principal(half);
+        first.seniorInterest = interest;
+        first.offtakerReceived += interest;
+        uint256 firstId = _recordPayment(loanId, first);
+
+        vm.warp(start + 20 * DAY);
+        _recordPayment(loanId, _principal(half));
+        _recordPayment(control, _principal(half));
+        assertEq(loanRegistry.outstanding(loanId), 0);
+
+        vm.warp(start + 25 * DAY);
+        _unrecordPayment(loanId, firstId);
+        assertEq(loanRegistry.outstanding(loanId), half);
+
+        vm.warp(start + 30 * DAY);
+        _assertWithinRounding(_accruedInterest(loanId), _accruedInterest(control), 4);
+    }
+
+    function test_interestOnlyRepaymentReversesWithNothingToRestore() public {
+        (uint256 loanId,, uint256 start) = _loanAndControl();
+
+        vm.warp(start + 10 * DAY);
+        uint256 interest = _accruedInterest(loanId);
+        uint256 repaymentId = _recordPayment(loanId, _interestOnly(interest));
+
+        vm.warp(start + 13 * DAY);
+        vm.expectEmit(address(loanRegistry));
+        emit LoanRegistryUpgradeable.PaymentUnrecorded(loanId, repaymentId, SENIOR_TRANCHE, 0);
+        _unrecordPayment(loanId, repaymentId);
+        assertGt(_accruedInterest(loanId), interest);
+    }
+
+    function test_unrecordPaymentRestoresAcrossManyEpochs() public {
+        (uint256 loanId, uint256 control, uint256 start) = _loanAndControl();
+        uint256 half = SENIOR_TRANCHE / 2;
+
+        vm.warp(start + 10 * DAY);
+        uint256 repaymentId = _recordPayment(loanId, _principal(half));
+        uint256 epochsBefore = loanRegistryReader.mutableLoanData(loanId).nextEconomicsEpochsId;
+
+        uint256 time = start + 10 * DAY;
+        for (uint256 i; i < 100; ++i) {
+            time += 1 hours;
+            vm.warp(time);
+            _recordPayment(loanId, _interestOnly(0));
+        }
+        assertEq(loanRegistryReader.mutableLoanData(loanId).nextEconomicsEpochsId, epochsBefore + 100);
+
+        uint256 before = _accruedInterest(loanId);
+        vm.expectEmit(address(loanRegistry));
+        emit LoanRegistryUpgradeable.PaymentUnrecorded(
+            loanId, repaymentId, SENIOR_TRANCHE, _restored(half, uint256(RATE) * 100 hours)
+        );
+        _unrecordPayment(loanId, repaymentId);
+        assertEq(_accruedInterest(loanId) - before, _restored(half, uint256(RATE) * 100 hours));
+
+        vm.warp(start + 30 * DAY);
+        _assertWithinRounding(_accruedInterest(loanId), _accruedInterest(control), 102);
     }
 
     function test_unrecordPaymentReverts() public {
@@ -588,8 +762,8 @@ contract LoanRegistryTest is PipelineTestSetUp {
         assertEq(uint8(loanRegistry.status(loanId)), uint8(ILoanRegistry.LoanStatus.Default));
         assertTrue(money.carvedOut);
         assertEq(money.outstanding, SENIOR_TRANCHE);
-        assertEq(loanRegistry.outstandingTotal(), SENIOR_TRANCHE);
-        assertEq(loanRegistry.unabsorbedTotal(), 0);
+        assertEq(loanRegistryReader.outstandingTotal(), SENIOR_TRANCHE);
+        assertEq(loanRegistryReader.unabsorbedTotal(), 0);
 
         assertEq(plUsd.balanceOf(address(pocket)), SENIOR_TRANCHE);
         assertEq(sPlUsd.totalAssets(), 0);
@@ -610,7 +784,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         _setDefault(loanId);
 
         assertEq(plUsd.balanceOf(address(pocket)), SENIOR_TRANCHE - 1_000_000);
-        assertEq(loanRegistry.unabsorbedTotal(), 0);
+        assertEq(loanRegistryReader.unabsorbedTotal(), 0);
     }
 
     function test_cureAndRedefault() public {
@@ -703,12 +877,12 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         loanRegistry.writeDown(loanId, 3_000_000);
 
-        ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
+        ILoanRegistry.MutableLoanData memory loan = loanRegistryReader.mutableLoanData(loanId);
         assertEq(loan.writtenDown, 3_000_000);
         assertEq(loan.nextEconomicsEpochsId, 2);
         assertEq(loanRegistry.outstanding(loanId), SENIOR_TRANCHE - 3_000_000);
-        assertEq(loanRegistry.outstandingTotal(), SENIOR_TRANCHE - 3_000_000);
-        assertEq(loanRegistry.unabsorbedTotal(), 0);
+        assertEq(loanRegistryReader.outstandingTotal(), SENIOR_TRANCHE - 3_000_000);
+        assertEq(loanRegistryReader.unabsorbedTotal(), 0);
 
         PocketUpgradeable.PocketData memory pocketData = pocket.pocket(loanId);
         assertEq(pocketData.held, SENIOR_TRANCHE - 3_000_000);
@@ -730,7 +904,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         loanRegistry.writeDown(loanId, 3_000_000);
 
-        assertEq(loanRegistry.unabsorbedTotal(), 1_000_000);
+        assertEq(loanRegistryReader.unabsorbedTotal(), 1_000_000);
     }
 
     function test_writeDownReportsWhatOlderPocketsCovered() public {
@@ -750,7 +924,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         loanRegistry.writeDown(loanId, 3_000_000);
 
-        assertEq(loanRegistry.unabsorbedTotal(), 400_000);
+        assertEq(loanRegistryReader.unabsorbedTotal(), 400_000);
     }
 
     function test_writeDownRejectsAPocketCoveringMoreThanItLacked() public {
@@ -821,11 +995,12 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         loanRegistry.adjustInterest(loanId, 3_000_000, reasonHash);
         assertEq(_accruedInterest(loanId), base + 2_000_000);
-        assertEq(loanRegistry.mutableLoanData(loanId).interestAdjustment, 2_000_000);
+        assertEq(loanRegistryReader.mutableLoanData(loanId).interestAdjustment, 2_000_000);
 
         vm.prank(loanRegistryManager);
         loanRegistry.adjustInterest(loanId, -int256(base) * 2, reasonHash);
         assertEq(_accruedInterest(loanId), 0);
+        assertEq(loanRegistryReader.mutableLoanData(loanId).interestAdjustment, 2_000_000 - int256(base) * 2);
     }
 
     function test_adjustInterestReverts() public {
@@ -853,7 +1028,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         loanRegistry.closeLoan(loanId, ILoanRegistry.ClosureReason.Cancelled);
 
-        ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
+        ILoanRegistry.MutableLoanData memory loan = loanRegistryReader.mutableLoanData(loanId);
         assertEq(uint8(loan.status), uint8(ILoanRegistry.LoanStatus.Closed));
         assertEq(uint8(loan.closureReason), uint8(ILoanRegistry.ClosureReason.Cancelled));
 
@@ -878,10 +1053,10 @@ contract LoanRegistryTest is PipelineTestSetUp {
         skip(1);
         _recordPayment(loanId, _principal(SENIOR_TRANCHE));
         assertEq(loanRegistry.outstanding(loanId), 0);
-        assertEq(_accruedInterest(loanId), 3);
+        assertEq(_accruedInterest(loanId), 4);
 
         vm.expectEmit(address(loanRegistry));
-        emit LoanRegistryUpgradeable.InterestSettled(loanId, 3, 0, 3);
+        emit LoanRegistryUpgradeable.InterestSettled(loanId, 4, 0, 4);
         vm.expectEmit(address(loanRegistry));
         emit LoanRegistryUpgradeable.LoanClosed(loanId, ILoanRegistry.ClosureReason.EarlyRepayment);
 
@@ -959,7 +1134,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         loanRegistry.closeDefaulted(loanId, ILoanRegistry.ClosureReason.Default);
 
-        ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
+        ILoanRegistry.MutableLoanData memory loan = loanRegistryReader.mutableLoanData(loanId);
         assertEq(uint8(loan.status), uint8(ILoanRegistry.LoanStatus.Closed));
         assertEq(uint8(loan.closureReason), uint8(ILoanRegistry.ClosureReason.Default));
     }
@@ -988,7 +1163,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         loanRegistry.updateMutable(loanId, ILoanRegistry.LoanStatus.WatchList, "watch");
 
-        uint256 maturity = loanRegistry.mutableLoanData(loanId).currentMaturityTimestamp;
+        uint256 maturity = loanRegistryReader.mutableLoanData(loanId).currentMaturityTimestamp;
         vm.warp(maturity + 1);
 
         uint32 newRate = 120_000;
@@ -1000,14 +1175,14 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         loanRegistry.rollover(loanId, newRate, newMaturity);
 
-        ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
+        ILoanRegistry.MutableLoanData memory loan = loanRegistryReader.mutableLoanData(loanId);
         assertEq(uint8(loan.status), uint8(ILoanRegistry.LoanStatus.WatchList));
         assertEq(loan.currentMaturityTimestamp, newMaturity);
         assertEq(loan.currentRate, newRate);
         assertEq(loan.nextEconomicsEpochsId, 2);
 
         uint256 firstEpochInterest = _interest(YEAR + 1, RATE, SENIOR_TRANCHE);
-        ILoanRegistry.EconomicsEpoch memory epoch = loanRegistry.economicsEpoch(loanId, 1);
+        ILoanRegistry.EconomicsEpoch memory epoch = loanRegistryReader.economicsEpoch(loanId, 1);
         assertEq(epoch.accruedInterest, firstEpochInterest);
         assertEq(epoch.effectiveFrom, vm.getBlockTimestamp());
         assertEq(epoch.maturityDate, newMaturity);
@@ -1062,14 +1237,14 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         loanRegistry.amendEconomics(loanId, newRate, newMaturity);
 
-        ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
+        ILoanRegistry.MutableLoanData memory loan = loanRegistryReader.mutableLoanData(loanId);
         assertEq(loan.nextEconomicsEpochsId, 0);
         assertEq(uint8(loan.status), uint8(ILoanRegistry.LoanStatus.Approved));
         assertEq(loan.currentRate, newRate);
         assertEq(loan.currentMaturityTimestamp, newMaturity);
 
         _disburse(loanId, SENIOR_TRANCHE);
-        ILoanRegistry.EconomicsEpoch memory epoch = loanRegistry.economicsEpoch(loanId, 0);
+        ILoanRegistry.EconomicsEpoch memory epoch = loanRegistryReader.economicsEpoch(loanId, 0);
         assertEq(epoch.seniorInterestRate, newRate);
         assertEq(epoch.maturityDate, newMaturity);
 
@@ -1088,11 +1263,11 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.prank(loanRegistryManager);
         loanRegistry.amendEconomics(loanId, newRate, newMaturity);
 
-        ILoanRegistry.MutableLoanData memory loan = loanRegistry.mutableLoanData(loanId);
+        ILoanRegistry.MutableLoanData memory loan = loanRegistryReader.mutableLoanData(loanId);
         assertEq(uint8(loan.status), uint8(ILoanRegistry.LoanStatus.Default));
         assertEq(loan.nextEconomicsEpochsId, 2);
 
-        ILoanRegistry.EconomicsEpoch memory epoch = loanRegistry.economicsEpoch(loanId, 1);
+        ILoanRegistry.EconomicsEpoch memory epoch = loanRegistryReader.economicsEpoch(loanId, 1);
         assertEq(epoch.accruedInterest, 100_000_000);
         assertEq(epoch.seniorInterestRate, newRate);
         assertEq(epoch.maturityDate, newMaturity);
@@ -1123,17 +1298,17 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.expectEmit(address(loanRegistry));
         emit LoanRegistryUpgradeable.CapitalWalletSet(newAddress);
         loanRegistry.setCapitalWallet(newAddress);
-        assertEq(loanRegistry.capitalWallet(), newAddress);
+        assertEq(loanRegistryReader.capitalWallet(), newAddress);
 
         vm.expectEmit(address(loanRegistry));
         emit LoanRegistryUpgradeable.MaxFeeBpsSet(10_000);
         loanRegistry.setMaxFeeBps(10_000);
-        assertEq(loanRegistry.maxFeeBps(), 10_000);
+        assertEq(loanRegistryReader.maxFeeBps(), 10_000);
 
         vm.expectEmit(address(loanRegistry));
         emit LoanRegistryUpgradeable.MaxResidualSet(0);
         loanRegistry.setMaxResidual(0);
-        assertEq(loanRegistry.maxResidual(), 0);
+        assertEq(loanRegistryReader.maxResidual(), 0);
 
         vm.stopPrank();
 
@@ -1276,9 +1451,9 @@ contract LoanRegistryTest is PipelineTestSetUp {
         vm.expectRevert(nonExistent);
         loanRegistry.immutableLoanData(0);
         vm.expectRevert(nonExistent);
-        loanRegistry.mutableLoanData(0);
+        loanRegistryReader.mutableLoanData(0);
         vm.expectRevert(nonExistent);
-        loanRegistry.economicsEpoch(0, 0);
+        loanRegistryReader.economicsEpoch(0, 0);
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 0));
         loanRegistry.tokenURI(0);
     }
@@ -1316,10 +1491,10 @@ contract LoanRegistryTest is PipelineTestSetUp {
         loanRegistry.writeDown(secondLoanId, 50_000_000);
 
         assertEq(
-            loanRegistry.outstandingTotal(),
+            loanRegistryReader.outstandingTotal(),
             loanRegistry.outstanding(firstLoanId) + loanRegistry.outstanding(secondLoanId)
         );
-        assertEq(loanRegistry.outstandingTotal(), SENIOR_TRANCHE - 100_000_000 + 250_000_000);
+        assertEq(loanRegistryReader.outstandingTotal(), SENIOR_TRANCHE - 100_000_000 + 250_000_000);
     }
 
     function testFuzz_accruedInterest(uint256 firstDraw, uint256 secondDraw, uint32 rate, uint64 elapsed) public {
@@ -1393,6 +1568,31 @@ contract LoanRegistryTest is PipelineTestSetUp {
         (repaymentId,) = loanRegistry.recordPayment(loanId, repayment);
     }
 
+    function _unrecordPayment(uint256 loanId, uint256 repaymentId) private {
+        vm.prank(address(minter));
+        loanRegistry.unrecordPayment(loanId, repaymentId);
+    }
+
+    function _loanAndControl() private returns (uint256 loanId, uint256 control, uint256 start) {
+        start = vm.getBlockTimestamp();
+        loanId = _drawAndDisburse();
+        control = _drawAndDisburse();
+    }
+
+    function _amendRate(uint256 loanId, uint32 rate) private {
+        vm.prank(loanRegistryManager);
+        loanRegistry.amendEconomics(loanId, rate, uint64(vm.getBlockTimestamp() + 2 * YEAR));
+    }
+
+    function _restored(uint256 principal, uint256 rateSeconds) private pure returns (uint256) {
+        return Math.ceilDiv(principal * rateSeconds, YEAR * ONE);
+    }
+
+    function _assertWithinRounding(uint256 actual, uint256 expected, uint256 extraEpochs) private pure {
+        assertGe(actual, expected);
+        assertLe(actual - expected, extraEpochs);
+    }
+
     function _setDefault(uint256 loanId) private {
         vm.prank(loanRegistryManager);
         loanRegistry.setDefault(loanId);
@@ -1401,6 +1601,11 @@ contract LoanRegistryTest is PipelineTestSetUp {
     function _principal(uint256 amount) private pure returns (ILoanRegistry.RepaymentData memory repayment) {
         repayment.offtakerReceived = amount;
         repayment.seniorPrincipalRepaid = amount;
+    }
+
+    function _interestOnly(uint256 amount) private pure returns (ILoanRegistry.RepaymentData memory repayment) {
+        repayment.offtakerReceived = amount;
+        repayment.seniorInterest = amount;
     }
 
     function _equity(uint256 amount) private pure returns (ILoanRegistry.RepaymentData memory repayment) {
@@ -1413,6 +1618,6 @@ contract LoanRegistryTest is PipelineTestSetUp {
     }
 
     function _interest(uint256 elapsed, uint256 rate, uint256 principal) private pure returns (uint256) {
-        return elapsed * rate * principal / (YEAR * ONE);
+        return Math.ceilDiv(elapsed * rate * principal, YEAR * ONE);
     }
 }
