@@ -292,6 +292,10 @@ contract PipelineAccessTest is PipelineTestSetUp {
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
         pocket.unrelease(0, 0, 0);
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller));
+        pocket.cover(0);
     }
 
     function testFuzz_pocketLoanRegistryAccess(address caller) public {

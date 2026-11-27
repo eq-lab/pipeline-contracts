@@ -41,7 +41,7 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
     event PaymentUnrecorded(uint256 indexed loanId, uint256 indexed repaymentId, uint256 outstanding);
     event LoanDefaulted(uint256 indexed loanId, uint256 outstanding, uint256 moved);
     event LoanWrittenDown(
-        uint256 indexed loanId, uint256 amount, uint256 outstanding, uint256 burned, uint256 unabsorbed
+        uint256 indexed loanId, uint256 amount, uint256 outstanding, uint256 burned, uint256 covered, uint256 unabsorbed
     );
     event InterestAdjusted(uint256 indexed loanId, int256 delta, bytes32 reasonHash);
     event InterestSettled(uint256 indexed loanId, uint256 accrued, uint256 paid, uint256 waived);
@@ -431,11 +431,11 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
         loan.writtenDown += amount;
         $.outstandingTotal -= amount;
 
-        uint256 burned = _pocketBurn($, loanId, amount);
-        uint256 unabsorbed = amount - burned;
+        (uint256 burned, uint256 covered) = _pocketBurn($, loanId, amount);
+        uint256 unabsorbed = amount - burned - covered;
         $.unabsorbedTotal += unabsorbed;
 
-        emit LoanWrittenDown(loanId, amount, loanOutstanding - amount, burned, unabsorbed);
+        emit LoanWrittenDown(loanId, amount, loanOutstanding - amount, burned, covered, unabsorbed);
     }
 
     function _adjustInterest(uint256 loanId, int256 delta, bytes32 reasonHash) internal whenNotPaused {
@@ -539,10 +539,10 @@ abstract contract LoanRegistryUpgradeable is ERC721PausableUpgradeable, ILoanReg
 
     function _pocketBurn(LoanRegistryStorage storage $, uint256 loanId, uint256 amount)
         private
-        returns (uint256 burned)
+        returns (uint256 burned, uint256 covered)
     {
-        burned = $.pocket.burn(loanId, amount);
-        if (burned > amount) revert LoanRegistryCounterpartOverreported(amount, burned);
+        (burned, covered) = $.pocket.burn(loanId, amount);
+        if (burned + covered > amount) revert LoanRegistryCounterpartOverreported(amount, burned + covered);
     }
 
     function _validateRepayment(

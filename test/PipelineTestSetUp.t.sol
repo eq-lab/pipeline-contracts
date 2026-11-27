@@ -525,9 +525,10 @@ contract PipelineTestSetUp is Test {
         vm.prank(admin);
         authority.setTargetFunctionRole(address(sPlUsd), selectors, roleId);
 
-        selectors = new bytes4[](2);
+        selectors = new bytes4[](3);
         selectors[0] = PipelinePocket.release.selector;
         selectors[1] = PipelinePocket.unrelease.selector;
+        selectors[2] = PipelinePocket.cover.selector;
 
         vm.prank(admin);
         authority.setTargetFunctionRole(address(pocket), selectors, roleId);

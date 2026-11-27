@@ -124,7 +124,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     event CashRecorded(CashReason indexed reason, uint256 entryId, int256 delta, uint64 valueDate, bytes32 refHash);
     event CashCorrected(uint256 indexed originalId, uint256 entryId, int256 delta, bytes32 reasonHash);
     event MintCorrected(uint256 amount, bytes32 refHash);
-    event LossAbsorbed(uint256 requested, uint256 pulled);
+    event LossAbsorbed(uint256 requested, uint256 pulled, uint256 covered);
     event YieldBooked(uint256 indexed epoch, uint256 amount);
     event YieldReleased(uint256 amount);
     event YieldCancelled(uint256 indexed epoch, uint256 amount, uint256 minted, bytes32 refHash);
@@ -151,6 +151,7 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
     error MinterAlreadyReversed();
     error MinterWrongEntry();
     error MinterPulledMoreThanRequested(uint256 requested, uint256 pulled);
+    error MinterCoveredMoreThanRequested(uint256 requested, uint256 covered);
     error MinterExceedsBookedYield();
     error MinterNoPendingFee();
     error MinterFeeLocked();
@@ -613,9 +614,16 @@ abstract contract MinterUpgradeable is RateLimiterUpgradeable, PausableUpgradeab
         uint256 pulled = $.stakedPlUsd.pull(amount);
         if (pulled > amount) revert MinterPulledMoreThanRequested(amount, pulled);
         if (pulled != 0) _burnPlUsd($, pulled);
-        $.unabsorbedTotal += amount - pulled;
 
-        emit LossAbsorbed(amount, pulled);
+        uint256 shortfall = amount - pulled;
+        uint256 covered;
+        if (shortfall != 0) {
+            covered = $.pocket.cover(shortfall);
+            if (covered > shortfall) revert MinterCoveredMoreThanRequested(shortfall, covered);
+        }
+        $.unabsorbedTotal += shortfall - covered;
+
+        emit LossAbsorbed(amount, pulled, covered);
     }
 
     function _release(MinterStorage storage $) private returns (uint256 due) {

@@ -5,6 +5,7 @@ import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Pau
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import {IERC20Managed} from "../interfaces/IERC20Managed.sol";
 import {IPocket} from "../interfaces/IPocket.sol";
@@ -12,6 +13,7 @@ import {IStakedPipelineUSD} from "../interfaces/IStakedPipelineUSD.sol";
 
 abstract contract PocketUpgradeable is PausableUpgradeable, IPocket {
     using SafeERC20 for IERC20Managed;
+    using EnumerableSet for EnumerableSet.UintSet;
 
     struct PocketData {
         uint256 snapshotBlock;
@@ -25,7 +27,8 @@ abstract contract PocketUpgradeable is PausableUpgradeable, IPocket {
     event PocketOpened(uint256 indexed loanId, uint256 amount, uint256 snapshotBlock, uint256 supplyAtSnapshot);
     event Released(uint256 indexed loanId, uint256 principal, uint256 released, uint256 interest);
     event Unreleased(uint256 indexed loanId, uint256 principal, uint256 interest);
-    event Burned(uint256 indexed loanId, uint256 amount, uint256 burned);
+    event Burned(uint256 indexed loanId, uint256 amount, uint256 burned, uint256 covered);
+    event Covered(uint256 indexed loanId, bool hasForLoan, uint256 forLoan, uint256 burned);
     event Claimed(uint256 indexed loanId, address indexed holder, uint256 paid);
 
     error PocketAlreadyOpened(uint256 loanId);
@@ -39,6 +42,7 @@ abstract contract PocketUpgradeable is PausableUpgradeable, IPocket {
         IERC20Managed plUsd;
         mapping(uint256 loanId => PocketData) pockets;
         mapping(uint256 loanId => mapping(address holder => uint256)) claimed;
+        EnumerableSet.UintSet holding;
     }
 
     // keccak256(abi.encode(uint256(keccak256("pipeline.storage.Pocket")) - 1)) & ~bytes32(uint256(0xff))
@@ -88,6 +92,10 @@ abstract contract PocketUpgradeable is PausableUpgradeable, IPocket {
         return _openedPocket($, loanId);
     }
 
+    function holding() external view returns (uint256[] memory) {
+        return _getPocketStorage().holding.values();
+    }
+
     function stakedPlUsd() external view returns (address) {
         return address(_getPocketStorage().stakedPlUsd);
     }
@@ -97,21 +105,24 @@ abstract contract PocketUpgradeable is PausableUpgradeable, IPocket {
     }
 
     function _open(uint256 loanId, uint256 amount, uint256 snapshotBlock, uint256 supplyAtSnapshot) internal {
-        PocketData storage pocketData = _getPocketStorage().pockets[loanId];
+        PocketStorage storage $ = _getPocketStorage();
+        PocketData storage pocketData = $.pockets[loanId];
         if (pocketData.snapshotBlock != 0) revert PocketAlreadyOpened(loanId);
 
         pocketData.snapshotBlock = snapshotBlock;
         pocketData.supplyAtSnapshot = supplyAtSnapshot;
-        pocketData.held = amount;
+        _setHeld($, pocketData, loanId, amount);
 
         emit PocketOpened(loanId, amount, snapshotBlock, supplyAtSnapshot);
     }
 
     function _release(uint256 loanId, uint256 principal, uint256 interest) internal returns (uint256 released) {
-        PocketData storage pocketData = _openedPocket(_getPocketStorage(), loanId);
+        PocketStorage storage $ = _getPocketStorage();
+        PocketData storage pocketData = _openedPocket($, loanId);
 
-        released = Math.min(principal, pocketData.held);
-        pocketData.held -= released;
+        uint256 held = pocketData.held;
+        released = Math.min(principal, held);
+        _setHeld($, pocketData, loanId, held - released);
         pocketData.releasedTotal += released + interest;
 
         emit Released(loanId, principal, released, interest);
@@ -126,7 +137,7 @@ abstract contract PocketUpgradeable is PausableUpgradeable, IPocket {
         if (amount > releasedTotal) revert PocketExceedsReleased(loanId, amount, releasedTotal);
         if (pocketData.claimedTotal != 0) revert PocketAlreadyClaimed(loanId);
 
-        pocketData.held += principal;
+        _setHeld($, pocketData, loanId, pocketData.held + principal);
         pocketData.releasedTotal = releasedTotal - amount;
 
         if (interest != 0) _burnPlUsd($, interest);
@@ -134,17 +145,66 @@ abstract contract PocketUpgradeable is PausableUpgradeable, IPocket {
         emit Unreleased(loanId, principal, interest);
     }
 
-    function _burnHeld(uint256 loanId, uint256 amount) internal returns (uint256 burned) {
+    function _burnHeld(uint256 loanId, uint256 amount) internal returns (uint256 burned, uint256 covered) {
         PocketStorage storage $ = _getPocketStorage();
         PocketData storage pocketData = _openedPocket($, loanId);
 
-        burned = Math.min(amount, pocketData.held);
-        pocketData.held -= burned;
+        uint256 held = pocketData.held;
+        burned = Math.min(amount, held);
+        _setHeld($, pocketData, loanId, held - burned);
         pocketData.burnedTotal += burned;
 
         if (burned != 0) _burnPlUsd($, burned);
+        covered = _coverFrom($, amount - burned, pocketData.snapshotBlock, true, loanId);
 
-        emit Burned(loanId, amount, burned);
+        emit Burned(loanId, amount, burned, covered);
+    }
+
+    function _cover(uint256 amount) internal returns (uint256) {
+        return _coverFrom(_getPocketStorage(), amount, block.number, false, 0);
+    }
+
+    function _coverFrom(PocketStorage storage $, uint256 amount, uint256 bound, bool hasForLoan, uint256 forLoan)
+        private
+        returns (uint256 covered)
+    {
+        if (amount == 0) return 0;
+
+        uint256[] memory loanIds = $.holding.values();
+        uint256 heldLeft;
+        for (uint256 i; i < loanIds.length; ++i) {
+            PocketData storage pocketData = $.pockets[loanIds[i]];
+            if (pocketData.snapshotBlock <= bound) heldLeft += pocketData.held;
+        }
+
+        covered = Math.min(amount, heldLeft);
+        if (covered == 0) return 0;
+
+        uint256 toBurn = covered;
+        for (uint256 i; i < loanIds.length; ++i) {
+            uint256 loanId = loanIds[i];
+            PocketData storage pocketData = $.pockets[loanId];
+            if (pocketData.snapshotBlock > bound) continue;
+
+            uint256 held = pocketData.held;
+            uint256 share = Math.mulDiv(toBurn, held, heldLeft);
+            heldLeft -= held;
+            toBurn -= share;
+            if (share == 0) continue;
+
+            _setHeld($, pocketData, loanId, held - share);
+            pocketData.burnedTotal += share;
+
+            emit Covered(loanId, hasForLoan, forLoan, share);
+        }
+
+        _burnPlUsd($, covered);
+    }
+
+    function _setHeld(PocketStorage storage $, PocketData storage pocketData, uint256 loanId, uint256 held) private {
+        pocketData.held = held;
+        if (held != 0) $.holding.add(loanId);
+        else $.holding.remove(loanId);
     }
 
     function _claimable(PocketStorage storage $, PocketData storage pocketData, uint256 loanId, address holder)

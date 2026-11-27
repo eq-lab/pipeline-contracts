@@ -698,7 +698,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         _setDefault(loanId);
 
         vm.expectEmit(address(loanRegistry));
-        emit LoanRegistryUpgradeable.LoanWrittenDown(loanId, 3_000_000, SENIOR_TRANCHE - 3_000_000, 3_000_000, 0);
+        emit LoanRegistryUpgradeable.LoanWrittenDown(loanId, 3_000_000, SENIOR_TRANCHE - 3_000_000, 3_000_000, 0, 0);
 
         vm.prank(loanRegistryManager);
         loanRegistry.writeDown(loanId, 3_000_000);
@@ -724,13 +724,51 @@ contract LoanRegistryTest is PipelineTestSetUp {
 
         vm.expectEmit(address(loanRegistry));
         emit LoanRegistryUpgradeable.LoanWrittenDown(
-            loanId, 3_000_000, SENIOR_TRANCHE - 3_000_000, 2_000_000, 1_000_000
+            loanId, 3_000_000, SENIOR_TRANCHE - 3_000_000, 2_000_000, 0, 1_000_000
         );
 
         vm.prank(loanRegistryManager);
         loanRegistry.writeDown(loanId, 3_000_000);
 
         assertEq(loanRegistry.unabsorbedTotal(), 1_000_000);
+    }
+
+    function test_writeDownReportsWhatOlderPocketsCovered() public {
+        uint256 loanId = _drawAndDisburse();
+        _setDefault(loanId);
+        vm.mockCall(
+            address(pocket),
+            abi.encodeCall(IPocket.burn, (loanId, 3_000_000)),
+            abi.encode(uint256(2_000_000), uint256(600_000))
+        );
+
+        vm.expectEmit(address(loanRegistry));
+        emit LoanRegistryUpgradeable.LoanWrittenDown(
+            loanId, 3_000_000, SENIOR_TRANCHE - 3_000_000, 2_000_000, 600_000, 400_000
+        );
+
+        vm.prank(loanRegistryManager);
+        loanRegistry.writeDown(loanId, 3_000_000);
+
+        assertEq(loanRegistry.unabsorbedTotal(), 400_000);
+    }
+
+    function test_writeDownRejectsAPocketCoveringMoreThanItLacked() public {
+        uint256 loanId = _drawAndDisburse();
+        _setDefault(loanId);
+        vm.mockCall(
+            address(pocket),
+            abi.encodeCall(IPocket.burn, (loanId, 3_000_000)),
+            abi.encode(uint256(2_000_000), uint256(1_000_001))
+        );
+
+        vm.prank(loanRegistryManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                LoanRegistryUpgradeable.LoanRegistryCounterpartOverreported.selector, 3_000_000, 3_000_001
+            )
+        );
+        loanRegistry.writeDown(loanId, 3_000_000);
     }
 
     function test_writeDownReverts() public {
@@ -758,7 +796,7 @@ contract LoanRegistryTest is PipelineTestSetUp {
         );
         loanRegistry.writeDown(loanId, SENIOR_TRANCHE + 1);
 
-        vm.mockCall(address(pocket), abi.encodeCall(IPocket.burn, (loanId, 1)), abi.encode(uint256(2)));
+        vm.mockCall(address(pocket), abi.encodeCall(IPocket.burn, (loanId, 1)), abi.encode(uint256(2), uint256(0)));
 
         vm.prank(loanRegistryManager);
         vm.expectRevert(

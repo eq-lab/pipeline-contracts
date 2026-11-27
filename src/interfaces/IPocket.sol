@@ -8,5 +8,7 @@ interface IPocket {
 
     function unrelease(uint256 loanId, uint256 principal, uint256 interest) external;
 
-    function burn(uint256 loanId, uint256 amount) external returns (uint256 burned);
+    function burn(uint256 loanId, uint256 amount) external returns (uint256 burned, uint256 covered);
+
+    function cover(uint256 amount) external returns (uint256 covered);
 }
