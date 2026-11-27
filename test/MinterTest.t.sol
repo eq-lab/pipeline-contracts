@@ -10,6 +10,7 @@ import {DealToken} from "../src/dealTokenFactory/DealToken.sol";
 import {DealTokenFactoryUpgradeable} from "../src/dealTokenFactory/DealTokenFactoryUpgradeable.sol";
 import {ILoanRegistry} from "../src/interfaces/ILoanRegistry.sol";
 import {LoanRegistryUpgradeable} from "../src/loanRegistry/LoanRegistryUpgradeable.sol";
+import {IPocket} from "../src/interfaces/IPocket.sol";
 import {IStakedPipelineUSD} from "../src/interfaces/IStakedPipelineUSD.sol";
 import {RateLimiterUpgradeable} from "../src/depositManager/RateLimiterUpgradeable.sol";
 import {MinterUpgradeable} from "../src/minter/MinterUpgradeable.sol";
@@ -634,7 +635,7 @@ contract MinterTest is PipelineTestSetUp {
         assertEq(minterReader.inFlight(), 400);
 
         vm.expectEmit(address(minter));
-        emit MinterUpgradeable.LossAbsorbed(10, 10);
+        emit MinterUpgradeable.LossAbsorbed(10, 10, 0);
         vm.expectEmit(address(minter));
         emit MinterUpgradeable.CashRecorded(
             MinterUpgradeable.CashReason.Expense, 0, -10, uint64(vm.getBlockTimestamp()), _h(3)
@@ -737,7 +738,7 @@ contract MinterTest is PipelineTestSetUp {
         minter.correctVaultMint(150, _h(3));
 
         vm.expectEmit(address(minter));
-        emit MinterUpgradeable.LossAbsorbed(100, 50);
+        emit MinterUpgradeable.LossAbsorbed(100, 50, 0);
 
         vm.prank(minterOps);
         minter.recordExpense(100, 0, _h(4));
@@ -915,6 +916,104 @@ contract MinterTest is PipelineTestSetUp {
         pocketData = pocket.pocket(loanId);
         assertEq(pocketData.held, SENIOR_TRANCHE);
         assertEq(pocketData.releasedTotal, 0);
+        _assertBacked();
+    }
+
+    function test_aLossTheVaultCannotTakeIsCoveredByThePocketsFirst() public {
+        _wireInLp(100, 1);
+        vm.mockCall(address(pocket), abi.encodeCall(IPocket.cover, (50)), abi.encode(uint256(30)));
+
+        vm.expectEmit(address(minter));
+        emit MinterUpgradeable.LossAbsorbed(150, 100, 30);
+
+        vm.prank(minterOps);
+        minter.correctVaultMint(150, _h(2));
+
+        assertEq(plUsd.balanceOf(address(sPlUsd)), 0);
+        assertEq(minterReader.unabsorbedTotal(), 20);
+    }
+
+    function test_absorbRejectsCoverOverreport() public {
+        _wireInLp(100, 1);
+        vm.mockCall(address(pocket), abi.encodeCall(IPocket.cover, (50)), abi.encode(uint256(51)));
+
+        vm.prank(minterOps);
+        vm.expectRevert(abi.encodeWithSelector(MinterUpgradeable.MinterCoveredMoreThanRequested.selector, 50, 51));
+        minter.correctVaultMint(150, _h(2));
+    }
+
+    function test_aLossAfterTheCarveOutIsTakenFromThePocket() public {
+        (address a,) = _wireInLp(1_000_000_000, 1);
+        address b = _holderOutsideVault(1_000_000_000, 2);
+        uint256 loanId = _drawLoan();
+        _disburse(loanId, 1_000_000_000, 3);
+        skip(YEAR);
+
+        vm.roll(vm.getBlockNumber() + 1);
+        vm.prank(loanRegistryManager);
+        loanRegistry.setDefault(loanId);
+        assertEq(sPlUsd.totalAssets(), 0);
+        _assertBacked();
+
+        vm.roll(vm.getBlockNumber() + 1);
+        vm.prank(minterOps);
+        minter.recordExpense(200_000_000, 0, _h(4));
+        assertEq(pocket.pocket(loanId).held, 800_000_000);
+        assertEq(minterReader.unabsorbedTotal(), 0);
+        _assertBacked();
+
+        vm.roll(vm.getBlockNumber() + 1);
+        ILoanRegistry.RepaymentData memory recovery;
+        recovery.offtakerReceived = 1_000_000_000;
+        recovery.seniorPrincipalRepaid = 1_000_000_000;
+        vm.prank(mintCaller);
+        minter.repay(loanId, recovery, 0, _h(5), 0);
+
+        vm.prank(a);
+        assertEq(pocket.claim(loanId), 800_000_000);
+        assertEq(plUsd.balanceOf(b), 1_000_000_000);
+        assertEq(minterReader.unabsorbedTotal(), 0);
+        assertEq(loanRegistry.unabsorbedTotal(), 0);
+        _assertBacked();
+    }
+
+    function test_aWriteDownBeyondItsPocketIsTakenFromTheOlderPocket() public {
+        (address a,) = _wireInLp(600_000_000, 1);
+        address b = _holderOutsideVault(400_000_000, 2);
+        uint256 recovered = _drawLoan();
+        _disburse(recovered, 500_000_000, 3);
+        uint256 writtenOff = _drawLoan();
+        _disburse(writtenOff, 500_000_000, 4);
+        skip(YEAR);
+
+        vm.roll(vm.getBlockNumber() + 1);
+        vm.prank(loanRegistryManager);
+        loanRegistry.setDefault(recovered);
+        vm.roll(vm.getBlockNumber() + 1);
+        vm.prank(loanRegistryManager);
+        loanRegistry.setDefault(writtenOff);
+        assertEq(pocket.pocket(recovered).held, 500_000_000);
+        assertEq(pocket.pocket(writtenOff).held, 100_000_000);
+
+        vm.roll(vm.getBlockNumber() + 1);
+        vm.prank(loanRegistryManager);
+        loanRegistry.writeDown(writtenOff, 500_000_000);
+        assertEq(loanRegistry.unabsorbedTotal(), 0);
+        assertEq(pocket.pocket(recovered).held, 100_000_000);
+        _assertBacked();
+
+        vm.roll(vm.getBlockNumber() + 1);
+        ILoanRegistry.RepaymentData memory recovery;
+        recovery.offtakerReceived = 500_000_000;
+        recovery.seniorPrincipalRepaid = 500_000_000;
+        vm.prank(mintCaller);
+        minter.repay(recovered, recovery, 0, _h(5), 0);
+
+        vm.prank(a);
+        assertEq(pocket.claim(recovered), 100_000_000);
+        assertEq(plUsd.balanceOf(b), 400_000_000);
+        assertEq(minterReader.unabsorbedTotal(), 0);
+        assertEq(loanRegistry.unabsorbedTotal(), 0);
         _assertBacked();
     }
 

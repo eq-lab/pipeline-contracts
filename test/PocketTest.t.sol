@@ -102,10 +102,12 @@ contract PocketTest is PipelineTestSetUp {
         uint256 totalSupplyBefore = plUsd.totalSupply();
 
         vm.expectEmit(address(pocket));
-        emit PocketUpgradeable.Burned(LOAN, 400, 300);
+        emit PocketUpgradeable.Burned(LOAN, 400, 300, 0);
 
         vm.prank(address(loanRegistry));
-        assertEq(pocket.burn(LOAN, 400), 300);
+        (uint256 burned, uint256 covered) = pocket.burn(LOAN, 400);
+        assertEq(burned, 300);
+        assertEq(covered, 0);
 
         PocketUpgradeable.PocketData memory pocketData = pocket.pocket(LOAN);
         assertEq(pocketData.held, 0);
@@ -166,7 +168,9 @@ contract PocketTest is PipelineTestSetUp {
         assertEq(_claim(b), 50);
 
         vm.prank(address(loanRegistry));
-        assertEq(pocket.burn(LOAN, 400), 400);
+        (uint256 burned, uint256 covered) = pocket.burn(LOAN, 400);
+        assertEq(burned, 400);
+        assertEq(covered, 0);
         _assertBacked();
     }
 
@@ -248,6 +252,120 @@ contract PocketTest is PipelineTestSetUp {
         assertEq(_claim(lp), 0);
     }
 
+    function test_aLossTheVaultCannotTakeIsBurnedFromThePockets() public {
+        _stake(1_000);
+        assertEq(_default(1_000), 1_000);
+        assertEq(sPlUsd.totalAssets(), 0);
+
+        assertEq(_cover(200), 200);
+        PocketUpgradeable.PocketData memory pocketData = pocket.pocket(LOAN);
+        assertEq(pocketData.held, 800);
+        assertEq(pocketData.burnedTotal, 200);
+        _assertBacked();
+
+        assertEq(_recover(1_000, 0), 800);
+        _assertBacked();
+    }
+
+    function test_coverIsProRataAndBurnsExactlyWhatItReports() public {
+        _stake(400);
+        _defaultAt(3, 300, 200);
+        _defaultAt(4, 100, 201);
+
+        vm.expectEmit(address(pocket));
+        emit PocketUpgradeable.Covered(3, false, 0, 75);
+        vm.expectEmit(address(pocket));
+        emit PocketUpgradeable.Covered(4, false, 0, 26);
+        assertEq(_cover(101), 101);
+        assertEq(pocket.pocket(3).held, 225);
+        assertEq(pocket.pocket(4).held, 74);
+        _assertAllBacked(3, 4);
+
+        assertEq(_cover(1_000), 299);
+        assertEq(pocket.pocket(3).held, 0);
+        assertEq(pocket.pocket(4).held, 0);
+        assertEq(pocket.holding().length, 0);
+        assertEq(_cover(1), 0);
+        _assertAllBacked(3, 4);
+    }
+
+    function test_aWriteDownBeyondItsPocketIsBurnedFromOlderPockets() public {
+        _stake(600);
+        assertEq(_defaultAt(3, 500, 200), 500);
+        assertEq(_defaultAt(4, 500, 201), 100);
+
+        vm.roll(300);
+        vm.expectEmit(address(pocket));
+        emit PocketUpgradeable.Covered(3, true, 4, 400);
+        vm.expectEmit(address(pocket));
+        emit PocketUpgradeable.Burned(4, 500, 100, 400);
+        vm.prank(address(loanRegistry));
+        (uint256 burned, uint256 covered) = pocket.burn(4, 500);
+        assertEq(burned, 100);
+        assertEq(covered, 400);
+        assertEq(pocket.pocket(4).held, 0);
+        assertEq(pocket.pocket(3).held, 100);
+        assertEq(pocket.pocket(3).burnedTotal, 400);
+        _assertAllBacked(3, 4);
+
+        vm.prank(address(minter));
+        assertEq(pocket.release(3, 500, 0), 100);
+        _assertAllBacked(3, 4);
+    }
+
+    function test_aWriteDownIsNotBurnedFromYoungerPockets() public {
+        _stake(100);
+        assertEq(_defaultAt(3, 500, 200), 100);
+        vm.roll(201);
+        _stake(1_000);
+        assertEq(_defaultAt(4, 500, 202), 500);
+
+        vm.roll(300);
+        vm.prank(address(loanRegistry));
+        (uint256 burned, uint256 covered) = pocket.burn(3, 500);
+        assertEq(burned, 100);
+        assertEq(covered, 0);
+        assertEq(pocket.pocket(4).held, 500);
+        _assertAllBacked(3, 4);
+    }
+
+    function test_releasedPrincipalIsNotReachedByALaterWriteDown() public {
+        _stake(600);
+        _defaultAt(3, 500, 200);
+        _defaultAt(4, 500, 201);
+
+        vm.roll(300);
+        vm.prank(address(minter));
+        assertEq(pocket.release(3, 500, 0), 500);
+        vm.prank(address(loanRegistry));
+        (uint256 burned, uint256 covered) = pocket.burn(4, 500);
+        assertEq(burned, 100);
+        assertEq(covered, 0);
+        _assertAllBacked(3, 4);
+    }
+
+    function test_holdingListsThePocketsWithPlUsd() public {
+        _stake(500);
+        _defaultAt(3, 500, 200);
+        assertEq(_defaultAt(4, 500, 201), 0);
+        uint256[] memory holding = pocket.holding();
+        assertEq(holding.length, 1);
+        assertEq(holding[0], 3);
+
+        vm.roll(300);
+        vm.prank(address(minter));
+        uint256 released = pocket.release(3, 500, 0);
+        assertEq(pocket.holding().length, 0);
+
+        vm.prank(address(minter));
+        pocket.unrelease(3, released, 0);
+        assertEq(pocket.holding()[0], 3);
+
+        vm.prank(address(loanRegistry));
+        pocket.burn(3, 500);
+        assertEq(pocket.holding().length, 0);
+    }
+
     function test_largeAmounts() public {
         uint256 big = 1e30;
         address a = _stake(big);
@@ -299,6 +417,26 @@ contract PocketTest is PipelineTestSetUp {
         vm.roll(200);
         vm.prank(address(loanRegistry));
         return sPlUsd.carveOut(LOAN, amount);
+    }
+
+    function _defaultAt(uint256 loanId, uint256 amount, uint256 blockNumber) private returns (uint256 moved) {
+        vm.roll(blockNumber);
+        vm.prank(address(loanRegistry));
+        return sPlUsd.carveOut(loanId, amount);
+    }
+
+    function _cover(uint256 amount) private returns (uint256) {
+        vm.prank(address(minter));
+        return pocket.cover(amount);
+    }
+
+    function _assertAllBacked(uint256 first, uint256 second) private view {
+        PocketUpgradeable.PocketData memory a = pocket.pocket(first);
+        PocketUpgradeable.PocketData memory b = pocket.pocket(second);
+        assertEq(
+            plUsd.balanceOf(address(pocket)),
+            a.held + a.releasedTotal - a.claimedTotal + b.held + b.releasedTotal - b.claimedTotal
+        );
     }
 
     function _recover(uint256 principal, uint256 interest) private returns (uint256 released) {

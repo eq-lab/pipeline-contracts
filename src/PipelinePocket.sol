@@ -35,8 +35,12 @@ contract PipelinePocket is UUPSUpgradeable, AccessManagedUpgradeable, PocketUpgr
         _unrelease(loanId, principal, interest);
     }
 
-    function burn(uint256 loanId, uint256 amount) external restricted returns (uint256 burned) {
+    function burn(uint256 loanId, uint256 amount) external restricted returns (uint256 burned, uint256 covered) {
         return _burnHeld(loanId, amount);
+    }
+
+    function cover(uint256 amount) external restricted returns (uint256 covered) {
+        return _cover(amount);
     }
 
     function pause() external restricted {

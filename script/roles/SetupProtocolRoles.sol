@@ -33,9 +33,10 @@ contract SetupProtocolRoles is Script, Deployments {
         bytes4[] memory vaultMinterSelectors = new bytes4[](1);
         vaultMinterSelectors[0] = StakedPipelineUSD.pull.selector;
 
-        bytes4[] memory pocketMinterSelectors = new bytes4[](2);
+        bytes4[] memory pocketMinterSelectors = new bytes4[](3);
         pocketMinterSelectors[0] = PipelinePocket.release.selector;
         pocketMinterSelectors[1] = PipelinePocket.unrelease.selector;
+        pocketMinterSelectors[2] = PipelinePocket.cover.selector;
 
         bytes4[] memory vaultRegistrySelectors = new bytes4[](1);
         vaultRegistrySelectors[0] = StakedPipelineUSD.carveOut.selector;
