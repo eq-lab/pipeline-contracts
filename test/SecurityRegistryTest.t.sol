@@ -49,7 +49,6 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         assertEq(securityRecordNft.securityRegistry(), address(securityRegistry));
         assertEq(securityRecordNft.name(), "Pipeline Security Registry");
         assertEq(securityRecordNft.symbol(), "PLSR");
-        assertEq(securityRegistry.PAR_VALUE(), UNIT);
     }
 
     function test_setLoanRegistry() public {
@@ -114,9 +113,9 @@ contract SecurityRegistryTest is PipelineTestSetUp {
 
         ISecurityRegistry.Record memory recordData = securityRegistry.record(recordId);
         assertTrue(recordData.hasMark);
-        assertEq(recordData.mark.valuePerUnit, securityRegistry.PAR_VALUE());
+        assertEq(recordData.mark.valuePerUnit, UNIT);
         assertEq(recordData.mark.at, START);
-        assertEq(recordData.mark.benchmark, securityRegistry.PAR_BENCHMARK());
+        assertEq(recordData.mark.benchmark, bytes32("PAR"));
         assertEq(recordData.mark.reportHash, bytes32(0));
     }
 
@@ -203,7 +202,7 @@ contract SecurityRegistryTest is PipelineTestSetUp {
 
     function test_openRecordsCapAt32AndClosingFreesASlot() public {
         uint256 loanId = _loanWithTerms();
-        for (uint256 i; i < securityRegistry.MAX_OPEN_RECORDS_PER_LOAN(); ++i) {
+        for (uint256 i; i < 32; ++i) {
             _register(loanId, 0, _bl(10));
         }
         _expectRegisterRevert(loanId, 0, _bl(10), SecurityRegistryUpgradeable.SecurityRegistryTooManyRecords.selector);
@@ -290,6 +289,41 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         _release(blId);
         _perfect(warehouse);
         assertEq(securityRegistryReader.activeRecords(loanId).length, 2);
+    }
+
+    function test_perfectRefusesALotUnderEnforcement() public {
+        uint256 loanId = _loanWithTerms();
+        uint256 blId = _active(loanId, _bl(10_000));
+        _revalue(blId, 10_000);
+        uint256 lotId = securityRegistry.record(blId).lotId;
+        uint256 warehouse = _register(loanId, lotId, _goodsRecord(ISecurityRegistry.Protection.WarehousePledge, 10_000));
+        uint256 cash = _active(loanId, _usdRecord(ISecurityRegistry.Protection.CashCover, 3_000_000));
+        assertEq(securityRegistry.collateralValue(loanId), 13_000_000 * UNIT);
+
+        _setDefault(loanId);
+        _startEnforcement(blId);
+        assertEq(securityRegistry.collateralValue(loanId), 3_000_000 * UNIT);
+        assertEq(_marginCallAt(loanId), START);
+        _expectPerfectRevert(warehouse, SecurityRegistryUpgradeable.SecurityRegistryLotEnforcementStarted.selector);
+        _expectHandoverRevert(blId, warehouse, SecurityRegistryUpgradeable.SecurityRegistryWrongRecordStatus.selector);
+
+        uint256 late = _register(loanId, lotId, _goodsRecord(ISecurityRegistry.Protection.CollateralManagement, 10_000));
+        _expectPerfectRevert(late, SecurityRegistryUpgradeable.SecurityRegistryLotEnforcementStarted.selector);
+
+        vm.prank(securityAgent);
+        vm.expectRevert(SecurityRegistryUpgradeable.SecurityRegistryLtvTooHigh.selector);
+        securityRegistry.release(cash, _h(10));
+
+        _markEnforced(blId);
+        _expectPerfectRevert(warehouse, SecurityRegistryUpgradeable.SecurityRegistryLotEnforcementStarted.selector);
+
+        uint256 insurance =
+            _register(loanId, lotId, _usdRecord(ISecurityRegistry.Protection.InsuranceLossPayee, 10_000_000));
+        _perfect(insurance);
+        _release(warehouse);
+        _release(late);
+        assertEq(securityRegistry.collateralValue(loanId), 3_000_000 * UNIT);
+        assertEq(_marginCallAt(loanId), START);
     }
 
     function test_documentsCapAtSixteenWithTheEvidenceOnTop() public {
@@ -406,7 +440,7 @@ contract SecurityRegistryTest is PipelineTestSetUp {
             _register(loanId, lotId, _usdRecord(ISecurityRegistry.Protection.AssignedReceivable, 10_500_000));
         _handover(warehouse, receivable);
 
-        assertEq(securityRegistry.record(receivable).mark.benchmark, securityRegistry.PAR_BENCHMARK());
+        assertEq(securityRegistry.record(receivable).mark.benchmark, bytes32("PAR"));
         assertEq(securityRegistry.collateralValue(loanId), 10_500_000 * UNIT);
     }
 
@@ -563,6 +597,45 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         vm.prank(securityAgent);
         vm.expectRevert(SecurityRegistryUpgradeable.SecurityRegistryWrongRecordStatus.selector);
         securityRegistry.markEnforced(recordId, _h(13));
+    }
+
+    function test_enforcingANonCountingRecordKeepsTheLot() public {
+        uint256 loanId = _loanWithTerms();
+        uint256 blId = _active(loanId, _bl(10_000));
+        uint256 lotId = securityRegistry.record(blId).lotId;
+        uint256 insurance =
+            _register(loanId, lotId, _usdRecord(ISecurityRegistry.Protection.InsuranceLossPayee, 10_000_000));
+        _perfect(insurance);
+
+        _setDefault(loanId);
+        _startEnforcement(insurance);
+        uint256 warehouse = _register(loanId, lotId, _goodsRecord(ISecurityRegistry.Protection.WarehousePledge, 9_984));
+        _handover(blId, warehouse);
+        assertEq(uint8(securityRegistry.record(warehouse).status), uint8(ISecurityRegistry.RecordStatus.Active));
+    }
+
+    function test_releasingTheEnforcedRecordKeepsTheLotShut() public {
+        uint256 loanId = _loanWithTerms();
+        _active(loanId, _usdRecord(ISecurityRegistry.Protection.CashCover, 10_000_000));
+        uint256 blId = _active(loanId, _bl(10_000));
+        uint256 lotId = securityRegistry.record(blId).lotId;
+        _setDefault(loanId);
+        _startEnforcement(blId);
+        _release(blId);
+
+        uint256 warehouse = _register(loanId, lotId, _goodsRecord(ISecurityRegistry.Protection.WarehousePledge, 10_000));
+        _expectPerfectRevert(warehouse, SecurityRegistryUpgradeable.SecurityRegistryLotEnforcementStarted.selector);
+    }
+
+    function test_enforcingAUsdRecordShutsItsLot() public {
+        uint256 loanId = _loanWithTerms();
+        uint256 receivable = _active(loanId, _usdRecord(ISecurityRegistry.Protection.AssignedReceivable, 10_500_000));
+        uint256 lotId = securityRegistry.record(receivable).lotId;
+        _setDefault(loanId);
+        _startEnforcement(receivable);
+
+        uint256 lc = _register(loanId, lotId, _usdRecord(ISecurityRegistry.Protection.LcProceeds, 10_500_000));
+        _expectPerfectRevert(lc, SecurityRegistryUpgradeable.SecurityRegistryLotEnforcementStarted.selector);
     }
 
     function test_reportMandateBreachNeedsAnOpenLoan() public {
@@ -942,6 +1015,9 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         _setDefault(loanId);
         _startEnforcement(first);
         assertEq(securityRegistry.collateralValue(loanId), 11_000_000 * UNIT);
+
+        _active(loanId, _usdRecord(ISecurityRegistry.Protection.CashCover, 1_000_000));
+        assertEq(securityRegistry.collateralValue(loanId), 12_000_000 * UNIT);
     }
 
     function test_coverageIsMaxWithoutDebt() public {
@@ -2081,7 +2157,7 @@ contract SecurityRegistryTest is PipelineTestSetUp {
         assertFalse(detail.records[0].flagged);
         assertEq(detail.records[1].recordId, cash);
         assertEq(detail.records[1].countedQuantity, 1_000_000 * UNIT);
-        assertEq(detail.records[1].valuePerUnit, securityRegistry.PAR_VALUE());
+        assertEq(detail.records[1].valuePerUnit, UNIT);
         assertEq(detail.records[1].markAt, START);
 
         uint256 count = _inspect(goods, _certificate(ISecurityRecordNft.InspectionKind.StockCount, 9_000));
@@ -2450,6 +2526,12 @@ contract SecurityRegistryTest is PipelineTestSetUp {
 
     function _perfect(uint256 recordId) private {
         vm.prank(securityAgent);
+        securityRegistry.perfect(recordId, _h(9));
+    }
+
+    function _expectPerfectRevert(uint256 recordId, bytes4 selector) private {
+        vm.prank(securityAgent);
+        vm.expectRevert(selector);
         securityRegistry.perfect(recordId, _h(9));
     }
 
