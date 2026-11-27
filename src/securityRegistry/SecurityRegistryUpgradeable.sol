@@ -16,15 +16,16 @@ import {ISecurityRegistry} from "../interfaces/ISecurityRegistry.sol";
 abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, PausableUpgradeable, ISecurityRegistry {
     using EnumerableSet for EnumerableSet.UintSet;
 
-    uint256 public constant PAR_VALUE = 1_000_000;
-    uint256 public constant BPS_ONE = 10_000;
-    uint256 public constant MAX_OPEN_RECORDS_PER_LOAN = 32;
-    bytes32 public constant PAR_BENCHMARK = "PAR";
+    uint256 private constant PAR_VALUE = 1_000_000;
+    uint256 private constant BPS_ONE = 10_000;
+    uint256 private constant MAX_OPEN_RECORDS_PER_LOAN = 32;
+    bytes32 private constant PAR_BENCHMARK = "PAR";
 
     struct Lot {
         uint256 loanId;
         bool hasGoodsUnit;
         Unit goodsUnit;
+        bool enforcementStarted;
     }
 
     event RecordRegistered(uint256 indexed loanId, uint256 indexed recordId, uint256 lotId, Protection protection);
@@ -73,6 +74,7 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
     error SecurityRegistryLtvTooHigh();
     error SecurityRegistryNotFlagged();
     error SecurityRegistryFlagChanged();
+    error SecurityRegistryLotEnforcementStarted();
     error SecurityRegistryOnlyRecordNft();
     error SecurityRegistryZeroAddress();
     error SecurityRegistrySameValue();
@@ -151,8 +153,11 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
         SecurityRegistryStorage storage $ = _getSecurityRegistryStorage();
         Record storage recordData = _existingRecord($, recordId);
         _requireStatus(recordData, RecordStatus.PendingPerfection);
-        if (_counts(recordData.protection) && _countedRecordOfLot($, recordData.loanId, recordData.lotId) != 0) {
-            revert SecurityRegistryLotAlreadyCounted();
+        if (_counts(recordData.protection)) {
+            if ($.lots[recordData.lotId].enforcementStarted) revert SecurityRegistryLotEnforcementStarted();
+            if (_countedRecordOfLot($, recordData.loanId, recordData.lotId) != 0) {
+                revert SecurityRegistryLotAlreadyCounted();
+            }
         }
         _activate($, recordData, evidenceHash);
 
@@ -220,6 +225,7 @@ abstract contract SecurityRegistryUpgradeable is AccessManagedUpgradeable, Pausa
         }
 
         recordData.status = RecordStatus.UnderEnforcement;
+        if (_counts(recordData.protection)) $.lots[recordData.lotId].enforcementStarted = true;
 
         emit EnforcementStarted(recordData.loanId, recordId);
         _updateMarginCall($, recordData.loanId);
